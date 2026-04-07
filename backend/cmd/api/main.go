@@ -17,7 +17,9 @@ import (
 	"github.com/foodbi/backend/internal/purchases"
 	"github.com/foodbi/backend/internal/revenue"
 	"github.com/foodbi/backend/internal/statistics"
+	"github.com/foodbi/backend/internal/ai"
 	"github.com/foodbi/backend/internal/employees"
+	"github.com/foodbi/backend/internal/files"
 	"github.com/foodbi/backend/internal/notifications"
 	"github.com/foodbi/backend/internal/profiles"
 	"github.com/foodbi/backend/internal/stock"
@@ -58,6 +60,8 @@ func main() {
 	empHandler := employees.NewHandler(db)
 	profHandler := profiles.NewHandler(db)
 	notifHandler := notifications.NewHandler(db)
+	aiHandler := ai.NewHandler(db)
+	fileHandler := files.NewHandler(db)
 
 	r := chi.NewRouter()
 
@@ -107,6 +111,8 @@ func main() {
 			r.Mount("/employees", empHandler.Routes())
 			r.Mount("/profile", profHandler.Routes())
 			r.Mount("/notifications", notifHandler.Routes())
+			r.Mount("/ai", aiHandler.Routes())
+			r.Mount("/files", fileHandler.Routes())
 		})
 	})
 

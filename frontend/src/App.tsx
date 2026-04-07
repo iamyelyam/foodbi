@@ -15,6 +15,8 @@ import { TransfersPage } from '@/pages/transfers/TransfersPage'
 import { EmployeesPage } from '@/pages/employees/EmployeesPage'
 import { ProfilePage } from '@/pages/profile/ProfilePage'
 import { NotificationsPage } from '@/pages/notifications/NotificationsPage'
+import { AISuggestionsPage } from '@/pages/ai-suggestions/AISuggestionsPage'
+import { FileUploadPage } from '@/pages/file-upload/FileUploadPage'
 import type { ReactNode } from 'react'
 
 const queryClient = new QueryClient({
@@ -50,6 +52,8 @@ export default function App() {
           <Route path="/employees" element={<ProtectedRoute><EmployeesPage /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
           <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
+          <Route path="/ai-suggestions" element={<ProtectedRoute><AISuggestionsPage /></ProtectedRoute>} />
+          <Route path="/file-upload" element={<ProtectedRoute><FileUploadPage /></ProtectedRoute>} />
           <Route
             path="/*"
             element={
