@@ -1,0 +1,6 @@
+DROP MATERIALIZED VIEW IF EXISTS dashboard_daily_revenue;
+DROP TABLE IF EXISTS iiko_sync_log CASCADE;
+DROP TABLE IF EXISTS stock_snapshots CASCADE;
+DROP TABLE IF EXISTS purchase_facts CASCADE;
+DROP TABLE IF EXISTS product_sales_facts CASCADE;
+DROP TABLE IF EXISTS revenue_facts CASCADE;

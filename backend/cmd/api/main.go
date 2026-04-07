@@ -11,6 +11,7 @@ import (
 
 	"github.com/foodbi/backend/internal/auth"
 	"github.com/foodbi/backend/internal/database"
+	"github.com/foodbi/backend/internal/locations"
 	"github.com/foodbi/backend/internal/middleware"
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
@@ -36,6 +37,7 @@ func main() {
 
 	authService := auth.NewService(db)
 	authHandler := auth.NewHandler(authService)
+	locHandler := locations.NewHandler(db)
 
 	r := chi.NewRouter()
 
@@ -73,6 +75,8 @@ func main() {
 
 			r.Post("/auth/logout", authHandler.Logout)
 			r.Get("/auth/me", authHandler.Me)
+
+			r.Mount("/locations", locHandler.Routes())
 		})
 	})
 

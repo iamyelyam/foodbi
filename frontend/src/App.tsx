@@ -5,6 +5,7 @@ import { LoginPage } from '@/pages/auth/LoginPage'
 import { RegisterPage } from '@/pages/auth/RegisterPage'
 import { VerifyOTPPage } from '@/pages/auth/VerifyOTPPage'
 import { DashboardPage } from '@/pages/DashboardPage'
+import { LocationsPage } from '@/pages/locations/LocationsPage'
 import type { ReactNode } from 'react'
 
 const queryClient = new QueryClient({
@@ -30,6 +31,14 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/verify-otp" element={<VerifyOTPPage />} />
+          <Route
+            path="/locations"
+            element={
+              <ProtectedRoute>
+                <LocationsPage />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/*"
             element={

@@ -10,3 +10,4 @@ dist/
 backend/api
 backend/sync
 *.exe
+*.DS_Store
