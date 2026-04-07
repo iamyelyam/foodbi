@@ -70,7 +70,7 @@ export function DashboardPage() {
                 <span className="text-xs text-primary font-medium bg-primary-lighter px-2 py-0.5 rounded-full">Today</span>
               </div>
               <p className="text-3xl font-bold text-dark">
-                ${(summary?.today_revenue ?? 0).toLocaleString('en', { minimumFractionDigits: 2 })}
+                €{(summary?.today_revenue ?? 0).toLocaleString('en', { minimumFractionDigits: 2 })}
               </p>
               <div className="flex items-center gap-1.5 mt-1">
                 {isPositive ? <TrendingUp className="h-3.5 w-3.5 text-success" /> : <TrendingDown className="h-3.5 w-3.5 text-danger" />}
@@ -86,7 +86,7 @@ export function DashboardPage() {
               <div className="bg-white rounded-[12px] p-3 shadow-sm">
                 <p className="text-xs text-gray">Week Revenue</p>
                 <p className="text-lg font-bold text-dark mt-1">
-                  ${(summary?.week_revenue ?? 0).toLocaleString('en', { minimumFractionDigits: 0 })}
+                  €{(summary?.week_revenue ?? 0).toLocaleString('en', { minimumFractionDigits: 0 })}
                 </p>
               </div>
               <div className="bg-white rounded-[12px] p-3 shadow-sm">
@@ -112,7 +112,7 @@ export function DashboardPage() {
                 <span className="text-xs text-warning font-medium bg-warning/10 px-2 py-0.5 rounded-full">Cost</span>
               </div>
               <p className="text-3xl font-bold text-dark">
-                ${(summary?.today_purchases ?? 0).toLocaleString('en', { minimumFractionDigits: 2 })}
+                €{(summary?.today_purchases ?? 0).toLocaleString('en', { minimumFractionDigits: 2 })}
               </p>
             </div>
           </>

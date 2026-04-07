@@ -24,11 +24,11 @@ export function OrderDetailPage() {
             <div className="bg-white rounded-[16px] p-4 shadow-sm space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray">Revenue</span>
-                <span className="text-xl font-bold text-dark">${order.revenue?.toFixed(2)}</span>
+                <span className="text-xl font-bold text-dark">€{order.revenue?.toFixed(2)}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray">Discount</span>
-                <span className="text-sm text-danger">${order.discount?.toFixed(2)}</span>
+                <span className="text-sm text-danger">€{order.discount?.toFixed(2)}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray">Items</span>

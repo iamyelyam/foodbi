@@ -34,7 +34,7 @@ export function SupplierDetailPage() {
             <div className="grid grid-cols-3 gap-2">
               <div className="bg-white rounded-[12px] p-3 shadow-sm text-center">
                 <p className="text-xs text-gray">Total Spend</p>
-                <p className="text-sm font-bold text-dark mt-1">${supplier.total_sum?.toFixed(0)}</p>
+                <p className="text-sm font-bold text-dark mt-1">€{supplier.total_sum?.toFixed(0)}</p>
               </div>
               <div className="bg-white rounded-[12px] p-3 shadow-sm text-center">
                 <p className="text-xs text-gray">Invoices</p>
@@ -56,7 +56,7 @@ export function SupplierDetailPage() {
                     <p className="text-xs text-gray">{new Date(p.incoming_date).toLocaleDateString()}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-semibold text-dark">${p.total_sum?.toFixed(2)}</p>
+                    <p className="text-sm font-semibold text-dark">€{p.total_sum?.toFixed(2)}</p>
                     <span className={cn('text-xs', p.status === 'processed' ? 'text-success' : 'text-gray')}>{p.status}</span>
                   </div>
                 </div>

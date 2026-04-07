@@ -26,7 +26,7 @@ export function ProfitChart({ data, height = 200 }: ProfitChartProps) {
         <YAxis tick={{ fontSize: 10, fill: '#A4A2B7' }} />
         <Tooltip
           contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-          formatter={(value) => `$${Number(value).toFixed(2)}`}
+          formatter={(value) => `€${Number(value).toFixed(2)}`}
         />
         <Legend wrapperStyle={{ fontSize: 11 }} />
         <Bar dataKey="revenue" fill="#6ADEBF" radius={[4, 4, 0, 0]} name="Revenue" />

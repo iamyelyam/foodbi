@@ -69,7 +69,7 @@ export function StatisticsPage() {
               <div className="bg-white rounded-[12px] p-3 shadow-sm">
                 <p className="text-xs text-gray">Total Revenue</p>
                 <p className="text-lg font-bold text-dark mt-1">
-                  ${totalRevenue.toLocaleString('en', { minimumFractionDigits: 2 })}
+                  €{totalRevenue.toLocaleString('en', { minimumFractionDigits: 2 })}
                 </p>
               </div>
               <div className="bg-white rounded-[12px] p-3 shadow-sm">
@@ -96,13 +96,13 @@ export function StatisticsPage() {
               <div className="bg-white rounded-[12px] p-3 shadow-sm">
                 <p className="text-xs text-gray">Gross Profit</p>
                 <p className={cn('text-lg font-bold mt-1', totalProfit >= 0 ? 'text-success' : 'text-danger')}>
-                  ${totalProfit.toLocaleString('en', { minimumFractionDigits: 2 })}
+                  €{totalProfit.toLocaleString('en', { minimumFractionDigits: 2 })}
                 </p>
               </div>
               <div className="bg-white rounded-[12px] p-3 shadow-sm">
                 <p className="text-xs text-gray">Total Cost</p>
                 <p className="text-lg font-bold text-warning mt-1">
-                  ${totalCost.toLocaleString('en', { minimumFractionDigits: 2 })}
+                  €{totalCost.toLocaleString('en', { minimumFractionDigits: 2 })}
                 </p>
               </div>
             </div>

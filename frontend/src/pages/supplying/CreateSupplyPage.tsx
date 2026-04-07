@@ -125,12 +125,12 @@ export function CreateSupplyPage() {
                   <p className="text-sm font-medium text-dark">{item.product_name}</p>
                   <p className="text-xs text-gray">{item.quantity} {item.unit}</p>
                 </div>
-                <p className="text-sm font-semibold text-dark">${(item.quantity * item.price_per_unit).toFixed(2)}</p>
+                <p className="text-sm font-semibold text-dark">€{(item.quantity * item.price_per_unit).toFixed(2)}</p>
               </div>
             ))}
             <div className="flex items-center justify-between bg-primary/5 rounded-[12px] px-4 py-3">
               <span className="text-sm font-semibold text-dark">Total</span>
-              <span className="text-lg font-bold text-primary">${total.toFixed(2)}</span>
+              <span className="text-lg font-bold text-primary">€{total.toFixed(2)}</span>
             </div>
           </div>
         )}

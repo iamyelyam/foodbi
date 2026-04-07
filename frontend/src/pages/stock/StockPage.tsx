@@ -66,7 +66,7 @@ export function StockPage() {
                   <p className={cn('text-sm font-bold', isLow ? 'text-danger' : 'text-dark')}>
                     {item.amount} {item.unit}
                   </p>
-                  <p className="text-xs text-gray">${item.cost_sum.toFixed(2)}</p>
+                  <p className="text-xs text-gray">€{item.cost_sum.toFixed(2)}</p>
                 </div>
               </div>
             </div>

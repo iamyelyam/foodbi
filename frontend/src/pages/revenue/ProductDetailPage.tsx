@@ -27,7 +27,7 @@ export function ProductDetailPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-white rounded-[12px] p-3 shadow-sm">
                 <p className="text-xs text-gray">Total Revenue</p>
-                <p className="text-lg font-bold text-dark mt-1">${totalRev.toFixed(2)}</p>
+                <p className="text-lg font-bold text-dark mt-1">€{totalRev.toFixed(2)}</p>
               </div>
               <div className="bg-white rounded-[12px] p-3 shadow-sm">
                 <p className="text-xs text-gray">Total Sold</p>
@@ -47,7 +47,7 @@ export function ProductDetailPage() {
                 <div key={s.date} className="flex items-center justify-between px-4 py-3">
                   <span className="text-sm text-dark">{new Date(s.date).toLocaleDateString()}</span>
                   <div className="text-right">
-                    <p className="text-sm font-semibold text-dark">${s.revenue.toFixed(2)}</p>
+                    <p className="text-sm font-semibold text-dark">€{s.revenue.toFixed(2)}</p>
                     <p className="text-xs text-gray">{s.quantity} sold</p>
                   </div>
                 </div>

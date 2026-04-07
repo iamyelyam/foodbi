@@ -64,7 +64,7 @@ export function PurchasesPage() {
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm font-semibold text-dark">${p.total_sum.toFixed(2)}</p>
+                  <p className="text-sm font-semibold text-dark">€{p.total_sum.toFixed(2)}</p>
                   <span className={cn(
                     'text-xs px-2 py-0.5 rounded-full',
                     p.status === 'processed' ? 'bg-success/10 text-success' : 'bg-bg-alt text-gray'
@@ -94,7 +94,7 @@ export function PurchasesPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <p className="text-sm font-semibold text-dark">${s.total_sum.toFixed(2)}</p>
+                  <p className="text-sm font-semibold text-dark">€{s.total_sum.toFixed(2)}</p>
                   <ChevronRight className="h-4 w-4 text-gray-light" />
                 </div>
               </div>
@@ -116,7 +116,7 @@ export function PurchasesPage() {
           <div className="space-y-3">
             <div className="flex justify-between text-sm">
               <span className="text-gray">Total purchases</span>
-              <span className="font-semibold">${selectedSupplier.total_sum.toFixed(2)}</span>
+              <span className="font-semibold">€{selectedSupplier.total_sum.toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray">Invoices</span>
