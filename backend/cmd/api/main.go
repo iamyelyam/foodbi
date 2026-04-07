@@ -91,6 +91,9 @@ func main() {
 			r.Post("/login", authHandler.Login)
 			r.Post("/verify-otp", authHandler.VerifyOTP)
 			r.Post("/refresh", authHandler.RefreshToken)
+			r.Post("/accept-invite", authHandler.AcceptInvite)
+			r.Post("/forgot-password", authHandler.ForgotPassword)
+			r.Post("/reset-password", authHandler.ResetPassword)
 		})
 
 		r.Group(func(r chi.Router) {
@@ -99,6 +102,7 @@ func main() {
 
 			r.Post("/auth/logout", authHandler.Logout)
 			r.Get("/auth/me", authHandler.Me)
+			r.Post("/auth/invite", authHandler.Invite)
 
 			r.Mount("/locations", locHandler.Routes())
 			r.Mount("/dashboard", dashHandler.Routes())

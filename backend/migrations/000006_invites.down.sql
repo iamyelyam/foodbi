@@ -1,0 +1,3 @@
+ALTER TABLE users DROP COLUMN IF EXISTS reset_token;
+ALTER TABLE users DROP COLUMN IF EXISTS reset_token_expires;
+DROP TABLE IF EXISTS invites CASCADE;

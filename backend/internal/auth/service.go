@@ -261,6 +261,124 @@ func (s *Service) generateTokenPair(ctx context.Context, user *models.User) (*To
 	}, nil
 }
 
+// CreateInvite generates an invite token for a new employee.
+func (s *Service) CreateInvite(ctx context.Context, companyID, createdBy uuid.UUID, email, role string) (string, error) {
+	token := uuid.New().String()
+	expiresAt := time.Now().Add(7 * 24 * time.Hour)
+
+	_, err := s.db.Exec(ctx,
+		`INSERT INTO invites (id, company_id, email, role, token, created_by, expires_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		uuid.New(), companyID, email, role, token, createdBy, expiresAt)
+	if err != nil {
+		return "", fmt.Errorf("create invite: %w", err)
+	}
+	return token, nil
+}
+
+// AcceptInvite registers a user from an invite token.
+func (s *Service) AcceptInvite(ctx context.Context, token, password, firstName, lastName string) (*TokenPair, error) {
+	var inviteID, companyID uuid.UUID
+	var email, role string
+	var accepted bool
+	var expiresAt time.Time
+
+	err := s.db.QueryRow(ctx,
+		`SELECT id, company_id, email, role, accepted, expires_at FROM invites WHERE token = $1`,
+		token).Scan(&inviteID, &companyID, &email, &role, &accepted, &expiresAt)
+	if err != nil {
+		return nil, fmt.Errorf("invalid invite token")
+	}
+	if accepted {
+		return nil, fmt.Errorf("invite already used")
+	}
+	if time.Now().After(expiresAt) {
+		return nil, fmt.Errorf("invite expired")
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), 12)
+	if err != nil {
+		return nil, fmt.Errorf("hash password: %w", err)
+	}
+
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	user := &models.User{
+		ID:        uuid.New(),
+		CompanyID: companyID,
+		Email:     email,
+		FirstName: firstName,
+		LastName:  lastName,
+		Role:      models.Role(role),
+		IsActive:  true,
+	}
+
+	_, err = tx.Exec(ctx,
+		`INSERT INTO users (id, company_id, email, password_hash, first_name, last_name, role, is_active, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, true, NOW(), NOW())`,
+		user.ID, user.CompanyID, user.Email, string(hash), user.FirstName, user.LastName, user.Role)
+	if err != nil {
+		return nil, fmt.Errorf("create user: %w", err)
+	}
+
+	_, err = tx.Exec(ctx, "UPDATE invites SET accepted = true WHERE id = $1", inviteID)
+	if err != nil {
+		return nil, fmt.Errorf("update invite: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit: %w", err)
+	}
+
+	return s.generateTokenPair(ctx, user)
+}
+
+// ForgotPassword generates a reset token.
+func (s *Service) ForgotPassword(ctx context.Context, email string) error {
+	token := uuid.New().String()
+	expires := time.Now().Add(1 * time.Hour)
+
+	tag, err := s.db.Exec(ctx,
+		"UPDATE users SET reset_token = $1, reset_token_expires = $2, updated_at = NOW() WHERE email = $3",
+		token, expires, email)
+	if err != nil || tag.RowsAffected() == 0 {
+		// SECURITY: don't reveal if email exists
+		return nil
+	}
+	// In production: send email with reset link containing token
+	return nil
+}
+
+// ResetPassword validates reset token and updates password.
+func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) error {
+	var userID uuid.UUID
+	var expires time.Time
+
+	err := s.db.QueryRow(ctx,
+		"SELECT id, reset_token_expires FROM users WHERE reset_token = $1",
+		token).Scan(&userID, &expires)
+	if err != nil {
+		return fmt.Errorf("invalid reset token")
+	}
+	if time.Now().After(expires) {
+		return fmt.Errorf("reset token expired")
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), 12)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+
+	_, err = s.db.Exec(ctx,
+		"UPDATE users SET password_hash = $1, reset_token = NULL, reset_token_expires = NULL, updated_at = NOW() WHERE id = $2",
+		string(hash), userID)
+	return err
+}
+
 func generateOTP() (string, error) {
 	max := big.NewInt(999999)
 	n, err := rand.Int(rand.Reader, max)

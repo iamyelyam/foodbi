@@ -147,6 +147,102 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, user)
 }
 
+func (h *Handler) Invite(w http.ResponseWriter, r *http.Request) {
+	role := middleware.GetRole(r.Context())
+	if role != "owner" {
+		writeError(w, http.StatusForbidden, "only owners can invite employees")
+		return
+	}
+
+	var input struct {
+		Email string `json:"email" validate:"required,email"`
+		Role  string `json:"role" validate:"required,oneof=owner employee"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := validate.Struct(input); err != nil {
+		writeError(w, http.StatusBadRequest, "validation failed")
+		return
+	}
+
+	companyID := middleware.GetCompanyID(r.Context())
+	userID := middleware.GetUserID(r.Context())
+
+	token, err := h.service.CreateInvite(r.Context(), companyID, userID, input.Email, input.Role)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create invite")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]string{
+		"token":      token,
+		"invite_url": "/accept-invite?token=" + token,
+	})
+}
+
+func (h *Handler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Token     string `json:"token" validate:"required"`
+		Password  string `json:"password" validate:"required,min=8"`
+		FirstName string `json:"first_name" validate:"required"`
+		LastName  string `json:"last_name" validate:"required"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := validate.Struct(input); err != nil {
+		writeError(w, http.StatusBadRequest, "validation failed: "+err.Error())
+		return
+	}
+
+	tokens, err := h.service.AcceptInvite(r.Context(), input.Token, input.Password, input.FirstName, input.LastName)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, tokens)
+}
+
+func (h *Handler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Email string `json:"email" validate:"required,email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	// SECURITY: always return success to avoid email enumeration
+	_ = h.service.ForgotPassword(r.Context(), input.Email)
+	writeJSON(w, http.StatusOK, map[string]string{"message": "if an account exists, a reset link has been sent"})
+}
+
+func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Token       string `json:"token" validate:"required"`
+		NewPassword string `json:"new_password" validate:"required,min=8"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := validate.Struct(input); err != nil {
+		writeError(w, http.StatusBadRequest, "validation failed")
+		return
+	}
+
+	if err := h.service.ResetPassword(r.Context(), input.Token, input.NewPassword); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"message": "password reset successfully"})
+}
+
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

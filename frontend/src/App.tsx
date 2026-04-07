@@ -4,6 +4,9 @@ import { useAuthStore } from '@/stores/auth'
 import { LoginPage } from '@/pages/auth/LoginPage'
 import { RegisterPage } from '@/pages/auth/RegisterPage'
 import { VerifyOTPPage } from '@/pages/auth/VerifyOTPPage'
+import { OnboardingPage } from '@/pages/auth/OnboardingPage'
+import { AcceptInvitePage } from '@/pages/auth/AcceptInvitePage'
+import { ForgotPasswordPage } from '@/pages/auth/ForgotPasswordPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { LocationsPage } from '@/pages/locations/LocationsPage'
 import { RevenuePage } from '@/pages/revenue/RevenuePage'
@@ -39,9 +42,15 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
+          {/* Public auth routes */}
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/verify-otp" element={<VerifyOTPPage />} />
+          <Route path="/onboarding" element={<OnboardingPage />} />
+          <Route path="/accept-invite" element={<AcceptInvitePage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+
+          {/* Protected routes */}
           <Route path="/locations" element={<ProtectedRoute><LocationsPage /></ProtectedRoute>} />
           <Route path="/revenue" element={<ProtectedRoute><RevenuePage /></ProtectedRoute>} />
           <Route path="/purchases" element={<ProtectedRoute><PurchasesPage /></ProtectedRoute>} />
@@ -54,14 +63,9 @@ export default function App() {
           <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
           <Route path="/ai-suggestions" element={<ProtectedRoute><AISuggestionsPage /></ProtectedRoute>} />
           <Route path="/file-upload" element={<ProtectedRoute><FileUploadPage /></ProtectedRoute>} />
-          <Route
-            path="/*"
-            element={
-              <ProtectedRoute>
-                <DashboardPage />
-              </ProtectedRoute>
-            }
-          />
+
+          {/* Default */}
+          <Route path="/*" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
         </Routes>
       </BrowserRouter>
     </QueryClientProvider>
