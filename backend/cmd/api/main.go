@@ -10,9 +10,13 @@ import (
 	"time"
 
 	"github.com/foodbi/backend/internal/auth"
+	"github.com/foodbi/backend/internal/dashboard"
 	"github.com/foodbi/backend/internal/database"
 	"github.com/foodbi/backend/internal/locations"
 	"github.com/foodbi/backend/internal/middleware"
+	"github.com/foodbi/backend/internal/purchases"
+	"github.com/foodbi/backend/internal/revenue"
+	"github.com/foodbi/backend/internal/statistics"
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
@@ -38,6 +42,10 @@ func main() {
 	authService := auth.NewService(db)
 	authHandler := auth.NewHandler(authService)
 	locHandler := locations.NewHandler(db)
+	dashHandler := dashboard.NewHandler(db)
+	revHandler := revenue.NewHandler(db)
+	purchHandler := purchases.NewHandler(db)
+	statsHandler := statistics.NewHandler(db)
 
 	r := chi.NewRouter()
 
@@ -77,6 +85,10 @@ func main() {
 			r.Get("/auth/me", authHandler.Me)
 
 			r.Mount("/locations", locHandler.Routes())
+			r.Mount("/dashboard", dashHandler.Routes())
+			r.Mount("/revenue", revHandler.Routes())
+			r.Mount("/purchases", purchHandler.Routes())
+			r.Mount("/statistics", statsHandler.Routes())
 		})
 	})
 

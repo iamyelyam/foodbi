@@ -6,6 +6,9 @@ import { RegisterPage } from '@/pages/auth/RegisterPage'
 import { VerifyOTPPage } from '@/pages/auth/VerifyOTPPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { LocationsPage } from '@/pages/locations/LocationsPage'
+import { RevenuePage } from '@/pages/revenue/RevenuePage'
+import { PurchasesPage } from '@/pages/purchases/PurchasesPage'
+import { StatisticsPage } from '@/pages/statistics/StatisticsPage'
 import type { ReactNode } from 'react'
 
 const queryClient = new QueryClient({
@@ -31,14 +34,10 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/verify-otp" element={<VerifyOTPPage />} />
-          <Route
-            path="/locations"
-            element={
-              <ProtectedRoute>
-                <LocationsPage />
-              </ProtectedRoute>
-            }
-          />
+          <Route path="/locations" element={<ProtectedRoute><LocationsPage /></ProtectedRoute>} />
+          <Route path="/revenue" element={<ProtectedRoute><RevenuePage /></ProtectedRoute>} />
+          <Route path="/purchases" element={<ProtectedRoute><PurchasesPage /></ProtectedRoute>} />
+          <Route path="/statistics" element={<ProtectedRoute><StatisticsPage /></ProtectedRoute>} />
           <Route
             path="/*"
             element={
