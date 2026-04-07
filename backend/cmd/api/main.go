@@ -17,6 +17,9 @@ import (
 	"github.com/foodbi/backend/internal/purchases"
 	"github.com/foodbi/backend/internal/revenue"
 	"github.com/foodbi/backend/internal/statistics"
+	"github.com/foodbi/backend/internal/stock"
+	"github.com/foodbi/backend/internal/supplying"
+	"github.com/foodbi/backend/internal/transfers"
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
@@ -46,6 +49,9 @@ func main() {
 	revHandler := revenue.NewHandler(db)
 	purchHandler := purchases.NewHandler(db)
 	statsHandler := statistics.NewHandler(db)
+	stockHandler := stock.NewHandler(db)
+	supplyHandler := supplying.NewHandler(db)
+	transferHandler := transfers.NewHandler(db)
 
 	r := chi.NewRouter()
 
@@ -89,6 +95,9 @@ func main() {
 			r.Mount("/revenue", revHandler.Routes())
 			r.Mount("/purchases", purchHandler.Routes())
 			r.Mount("/statistics", statsHandler.Routes())
+			r.Mount("/stock", stockHandler.Routes())
+			r.Mount("/supplying", supplyHandler.Routes())
+			r.Mount("/transfers", transferHandler.Routes())
 		})
 	})
 

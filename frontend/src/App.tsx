@@ -9,6 +9,9 @@ import { LocationsPage } from '@/pages/locations/LocationsPage'
 import { RevenuePage } from '@/pages/revenue/RevenuePage'
 import { PurchasesPage } from '@/pages/purchases/PurchasesPage'
 import { StatisticsPage } from '@/pages/statistics/StatisticsPage'
+import { StockPage } from '@/pages/stock/StockPage'
+import { SupplyingPage } from '@/pages/supplying/SupplyingPage'
+import { TransfersPage } from '@/pages/transfers/TransfersPage'
 import type { ReactNode } from 'react'
 
 const queryClient = new QueryClient({
@@ -38,6 +41,9 @@ export default function App() {
           <Route path="/revenue" element={<ProtectedRoute><RevenuePage /></ProtectedRoute>} />
           <Route path="/purchases" element={<ProtectedRoute><PurchasesPage /></ProtectedRoute>} />
           <Route path="/statistics" element={<ProtectedRoute><StatisticsPage /></ProtectedRoute>} />
+          <Route path="/stock" element={<ProtectedRoute><StockPage /></ProtectedRoute>} />
+          <Route path="/supplying" element={<ProtectedRoute><SupplyingPage /></ProtectedRoute>} />
+          <Route path="/transfers" element={<ProtectedRoute><TransfersPage /></ProtectedRoute>} />
           <Route
             path="/*"
             element={
