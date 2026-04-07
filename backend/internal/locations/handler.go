@@ -3,6 +3,7 @@ package locations
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/foodbi/backend/internal/middleware"
 	"github.com/go-chi/chi/v5"
@@ -54,10 +55,12 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var loc Location
 		var iikoOrgID *string
-		if err := rows.Scan(&loc.ID, &loc.CompanyID, &loc.Name, &loc.Address, &iikoOrgID, &loc.CreatedAt); err != nil {
+		var createdAt time.Time
+		if err := rows.Scan(&loc.ID, &loc.CompanyID, &loc.Name, &loc.Address, &iikoOrgID, &createdAt); err != nil {
 			continue
 		}
 		loc.IikoOrgID = iikoOrgID
+		loc.CreatedAt = createdAt.Format(time.RFC3339)
 		locations = append(locations, loc)
 	}
 
