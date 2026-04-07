@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Header } from '@/components/layout/Header'
@@ -19,11 +19,13 @@ export function ProfilePage() {
   const { data: profile } = useQuery({
     queryKey: ['profile'],
     queryFn: () => api.get('/profile/me').then((r) => r.data),
-    select: (data) => {
-      if (!editing) setForm({ first_name: data.first_name, last_name: data.last_name, phone: data.phone })
-      return data
-    },
   })
+
+  useEffect(() => {
+    if (profile && !editing) {
+      setForm({ first_name: profile.first_name, last_name: profile.last_name, phone: profile.phone || '' })
+    }
+  }, [profile, editing])
 
   const updateMutation = useMutation({
     mutationFn: (data: typeof form) => api.put('/profile/me', data),

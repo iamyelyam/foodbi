@@ -3,12 +3,15 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useAuthStore } from '@/stores/auth'
 import { LoginPage } from '@/pages/auth/LoginPage'
 import { RegisterPage } from '@/pages/auth/RegisterPage'
+import { RegisterEmployeePage } from '@/pages/auth/RegisterEmployeePage'
 import { VerifyOTPPage } from '@/pages/auth/VerifyOTPPage'
 import { OnboardingPage } from '@/pages/auth/OnboardingPage'
 import { AcceptInvitePage } from '@/pages/auth/AcceptInvitePage'
 import { ForgotPasswordPage } from '@/pages/auth/ForgotPasswordPage'
 import { DashboardPage } from '@/pages/DashboardPage'
+import { EmployeeHomePage } from '@/pages/EmployeeHomePage'
 import { LocationsPage } from '@/pages/locations/LocationsPage'
+import { AddLocationPage } from '@/pages/locations/AddLocationPage'
 import { RevenuePage } from '@/pages/revenue/RevenuePage'
 import { OrderDetailPage } from '@/pages/revenue/OrderDetailPage'
 import { ProductDetailPage } from '@/pages/revenue/ProductDetailPage'
@@ -20,6 +23,7 @@ import { SupplyingPage } from '@/pages/supplying/SupplyingPage'
 import { CreateSupplyPage } from '@/pages/supplying/CreateSupplyPage'
 import { TransfersPage } from '@/pages/transfers/TransfersPage'
 import { CreateTransferPage } from '@/pages/transfers/CreateTransferPage'
+import { HistoryPage } from '@/pages/transfers/HistoryPage'
 import { EmployeesPage } from '@/pages/employees/EmployeesPage'
 import { AddEmployeePage } from '@/pages/employees/AddEmployeePage'
 import { EmployeeDetailPage } from '@/pages/employees/EmployeeDetailPage'
@@ -48,6 +52,12 @@ function P({ children }: { children: ReactNode }) {
   return <ProtectedRoute>{children}</ProtectedRoute>
 }
 
+function RoleHome() {
+  const { user } = useAuthStore()
+  if (user?.role === 'employee') return <EmployeeHomePage />
+  return <DashboardPage />
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -56,13 +66,15 @@ export default function App() {
           {/* Public */}
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/register/employee" element={<RegisterEmployeePage />} />
           <Route path="/verify-otp" element={<VerifyOTPPage />} />
           <Route path="/onboarding" element={<OnboardingPage />} />
           <Route path="/accept-invite" element={<AcceptInvitePage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
-          {/* Dashboard */}
+          {/* Locations */}
           <Route path="/locations" element={<P><LocationsPage /></P>} />
+          <Route path="/locations/new" element={<P><AddLocationPage /></P>} />
 
           {/* Revenue */}
           <Route path="/revenue" element={<P><RevenuePage /></P>} />
@@ -86,6 +98,7 @@ export default function App() {
           {/* Transfers */}
           <Route path="/transfers" element={<P><TransfersPage /></P>} />
           <Route path="/transfers/new" element={<P><CreateTransferPage /></P>} />
+          <Route path="/transfers/history" element={<P><HistoryPage /></P>} />
 
           {/* Employees */}
           <Route path="/employees" element={<P><EmployeesPage /></P>} />
@@ -100,8 +113,8 @@ export default function App() {
           <Route path="/ai-suggestions" element={<P><AISuggestionsPage /></P>} />
           <Route path="/file-upload" element={<P><FileUploadPage /></P>} />
 
-          {/* Default */}
-          <Route path="/*" element={<P><DashboardPage /></P>} />
+          {/* Default — role-based home */}
+          <Route path="/*" element={<P><RoleHome /></P>} />
         </Routes>
       </BrowserRouter>
     </QueryClientProvider>
