@@ -1,0 +1,12 @@
+.env.local
+.env
+.env.*.local
+*.key
+*.pem
+secrets.*
+node_modules/
+.next/
+dist/
+backend/api
+backend/sync
+*.exe
