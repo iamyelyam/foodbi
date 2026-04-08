@@ -11,3 +11,10 @@ backend/api
 backend/sync
 *.exe
 *.DS_Store
+
+# Working directories
+.claude/
+.omc/
+figma_exports/
+frontend/.claude/
+frontend/.omc/
