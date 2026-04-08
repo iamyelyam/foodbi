@@ -2,12 +2,12 @@ import { useQuery } from '@tanstack/react-query'
 import api from '@/lib/api'
 import { useAppStore } from '@/stores/app'
 
-export function useDashboard() {
+export function useDashboard(dateFrom?: string, dateTo?: string) {
   const locationId = useAppStore((s) => s.activeLocationId)
   return useQuery({
-    queryKey: ['dashboard', locationId],
+    queryKey: ['dashboard', locationId, dateFrom, dateTo],
     queryFn: () =>
-      api.get('/dashboard/summary', { params: { location_id: locationId } }).then((r) => r.data),
+      api.get('/dashboard/summary', { params: { location_id: locationId, date_from: dateFrom, date_to: dateTo } }).then((r) => r.data),
   })
 }
 
@@ -60,6 +60,14 @@ export function useRevenueStats(dateFrom?: string, dateTo?: string) {
     queryKey: ['stats-revenue', locationId, dateFrom, dateTo],
     queryFn: () =>
       api.get('/statistics/revenue', { params: { location_id: locationId, date_from: dateFrom, date_to: dateTo } }).then((r) => r.data),
+  })
+}
+
+export function useUnreadNotificationCount() {
+  return useQuery({
+    queryKey: ['notifications-unread-count'],
+    queryFn: () => api.get('/notifications/unread-count').then((r) => r.data?.count ?? 0),
+    refetchInterval: 30_000,
   })
 }
 

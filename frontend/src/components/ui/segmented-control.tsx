@@ -20,8 +20,8 @@ export function SegmentedControl<T extends string>({
           key={opt.value}
           onClick={() => onChange(opt.value)}
           className={cn(
-            'flex-1 py-2 text-sm font-medium rounded-[10px] transition-colors',
-            value === opt.value ? 'bg-white text-dark shadow-sm' : 'text-gray'
+            'flex-1 py-2.5 text-base font-medium rounded-[10px] transition-colors',
+            value === opt.value ? 'bg-primary text-black shadow-sm' : 'text-black'
           )}
         >
           {opt.label}
