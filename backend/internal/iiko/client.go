@@ -1,12 +1,14 @@
 package iiko
 
 import (
-	"bytes"
 	"context"
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,27 +16,30 @@ import (
 )
 
 const (
-	BaseURL         = "https://api-ru.iiko.services/api/1"
-	TokenTTL        = 60 * time.Minute
-	TokenRefreshAt  = 45 * time.Minute
-	MaxRetries      = 3
-	RetryBaseDelay  = 1 * time.Second
+	TokenTTL       = 15 * time.Minute
+	MaxRetries     = 3
+	RetryBaseDelay = 1 * time.Second
 )
 
-// Client manages authenticated requests to iiko Cloud API v2.
-// Each client instance is scoped to a single API key (one per company).
+// Client manages authenticated requests to iiko Server API (resto).
 type Client struct {
-	apiKey     string
+	baseURL    string // e.g. "https://palaushy-co.iiko.it"
+	login      string
+	passSHA1   string
 	httpClient *http.Client
 
-	mu           sync.RWMutex
-	token        string
-	tokenExpiry  time.Time
+	mu          sync.RWMutex
+	token       string
+	tokenExpiry time.Time
 }
 
-func NewClient(apiKey string) *Client {
+func NewClient(baseURL, login, password string) *Client {
+	// iiko Server API requires SHA1 hash of password
+	h := sha1.Sum([]byte(password))
 	return &Client{
-		apiKey: apiKey,
+		baseURL:  strings.TrimRight(baseURL, "/"),
+		login:    login,
+		passSHA1: fmt.Sprintf("%x", h),
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -44,18 +49,19 @@ func NewClient(apiKey string) *Client {
 // Authenticate obtains or refreshes the access token.
 func (c *Client) Authenticate(ctx context.Context) error {
 	c.mu.RLock()
-	if c.token != "" && time.Now().Before(c.tokenExpiry.Add(-15*time.Minute)) {
+	if c.token != "" && time.Now().Before(c.tokenExpiry) {
 		c.mu.RUnlock()
 		return nil
 	}
 	c.mu.RUnlock()
 
-	body, _ := json.Marshal(map[string]string{"apiLogin": c.apiKey})
-	req, err := http.NewRequestWithContext(ctx, "POST", BaseURL+"/access_token", bytes.NewReader(body))
+	authURL := fmt.Sprintf("%s/resto/api/auth?login=%s&pass=%s",
+		c.baseURL, url.QueryEscape(c.login), url.QueryEscape(c.passSHA1))
+
+	req, err := http.NewRequestWithContext(ctx, "GET", authURL, nil)
 	if err != nil {
 		return fmt.Errorf("create auth request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -63,42 +69,38 @@ func (c *Client) Authenticate(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("auth failed (status %d): %s", resp.StatusCode, string(respBody))
-	}
+	body, _ := io.ReadAll(resp.Body)
+	token := strings.TrimSpace(string(body))
 
-	var result struct {
-		CorrelationID string `json:"correlationId"`
-		Token         string `json:"token"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return fmt.Errorf("decode auth response: %w", err)
+	if resp.StatusCode != http.StatusOK || token == "" {
+		return fmt.Errorf("auth failed (status %d): %s", resp.StatusCode, token)
 	}
 
 	c.mu.Lock()
-	c.token = result.Token
+	c.token = token
 	c.tokenExpiry = time.Now().Add(TokenTTL)
 	c.mu.Unlock()
 
-	log.Debug().Str("correlation_id", result.CorrelationID).Msg("iiko: authenticated")
+	log.Debug().Msg("iiko: authenticated to server API")
 	return nil
 }
 
-// doRequest executes an authenticated request with retry and backoff.
-func (c *Client) doRequest(ctx context.Context, method, path string, payload interface{}) ([]byte, error) {
+// doGet executes an authenticated GET request with retry.
+func (c *Client) doGet(ctx context.Context, path string, params url.Values) ([]byte, error) {
 	if err := c.Authenticate(ctx); err != nil {
 		return nil, fmt.Errorf("authenticate: %w", err)
 	}
 
-	var bodyReader io.Reader
-	if payload != nil {
-		data, err := json.Marshal(payload)
-		if err != nil {
-			return nil, fmt.Errorf("marshal payload: %w", err)
-		}
-		bodyReader = bytes.NewReader(data)
+	c.mu.RLock()
+	token := c.token
+	c.mu.RUnlock()
+
+	if params == nil {
+		params = url.Values{}
 	}
+	params.Set("key", token)
+
+	fullURL := fmt.Sprintf("%s%s?%s", c.baseURL, path, params.Encode())
 
 	var lastErr error
 	for attempt := 0; attempt <= MaxRetries; attempt++ {
@@ -109,18 +111,12 @@ func (c *Client) doRequest(ctx context.Context, method, path string, payload int
 				return nil, ctx.Err()
 			case <-time.After(delay):
 			}
-			log.Warn().Int("attempt", attempt+1).Str("path", path).Msg("iiko: retrying request")
 		}
 
-		req, err := http.NewRequestWithContext(ctx, method, BaseURL+path, bodyReader)
+		req, err := http.NewRequestWithContext(ctx, "GET", fullURL, nil)
 		if err != nil {
 			return nil, fmt.Errorf("create request: %w", err)
 		}
-
-		c.mu.RLock()
-		req.Header.Set("Authorization", "Bearer "+c.token)
-		c.mu.RUnlock()
-		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
@@ -136,18 +132,19 @@ func (c *Client) doRequest(ctx context.Context, method, path string, payload int
 		}
 
 		if resp.StatusCode == http.StatusUnauthorized {
-			// Token expired, force re-auth
 			c.mu.Lock()
 			c.token = ""
 			c.mu.Unlock()
 			if err := c.Authenticate(ctx); err != nil {
 				return nil, fmt.Errorf("re-authenticate: %w", err)
 			}
+			params.Set("key", c.token)
+			fullURL = fmt.Sprintf("%s%s?%s", c.baseURL, path, params.Encode())
 			lastErr = fmt.Errorf("token expired, re-authenticated")
 			continue
 		}
 
-		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+		if resp.StatusCode >= 500 {
 			lastErr = fmt.Errorf("server error (status %d): %s", resp.StatusCode, string(respBody))
 			continue
 		}
@@ -162,7 +159,77 @@ func (c *Client) doRequest(ctx context.Context, method, path string, payload int
 	return nil, fmt.Errorf("max retries exceeded: %w", lastErr)
 }
 
-// Post is a convenience method for POST requests.
-func (c *Client) Post(ctx context.Context, path string, payload interface{}) ([]byte, error) {
-	return c.doRequest(ctx, "POST", path, payload)
+// doPost executes an authenticated POST request with JSON body and retry.
+func (c *Client) doPost(ctx context.Context, path string, payload interface{}) ([]byte, error) {
+	if err := c.Authenticate(ctx); err != nil {
+		return nil, fmt.Errorf("authenticate: %w", err)
+	}
+
+	c.mu.RLock()
+	token := c.token
+	c.mu.RUnlock()
+
+	jsonBody, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal payload: %w", err)
+	}
+
+	fullURL := fmt.Sprintf("%s%s?key=%s", c.baseURL, path, url.QueryEscape(token))
+
+	var lastErr error
+	for attempt := 0; attempt <= MaxRetries; attempt++ {
+		if attempt > 0 {
+			delay := RetryBaseDelay * time.Duration(1<<(attempt-1))
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "POST", fullURL, strings.NewReader(string(jsonBody)))
+		if err != nil {
+			return nil, fmt.Errorf("create request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json")
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("request failed: %w", err)
+			continue
+		}
+
+		respBody, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			lastErr = fmt.Errorf("read response: %w", err)
+			continue
+		}
+
+		if resp.StatusCode == http.StatusUnauthorized {
+			c.mu.Lock()
+			c.token = ""
+			c.mu.Unlock()
+			if err := c.Authenticate(ctx); err != nil {
+				return nil, fmt.Errorf("re-authenticate: %w", err)
+			}
+			fullURL = fmt.Sprintf("%s%s?key=%s", c.baseURL, path, url.QueryEscape(c.token))
+			lastErr = fmt.Errorf("token expired")
+			continue
+		}
+
+		if resp.StatusCode >= 500 {
+			lastErr = fmt.Errorf("server error (status %d): %s", resp.StatusCode, string(respBody))
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("iiko API error (status %d): %s", resp.StatusCode, string(respBody))
+		}
+
+		return respBody, nil
+	}
+
+	return nil, fmt.Errorf("max retries exceeded: %w", lastErr)
 }

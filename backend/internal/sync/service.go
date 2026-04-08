@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"time"
 
@@ -21,9 +22,11 @@ func NewService(db *pgxpool.Pool) *Service {
 
 // CompanySync holds the info needed to sync one company.
 type CompanySync struct {
-	CompanyID  uuid.UUID
-	IikoAPIKey string
-	Locations  []LocationSync
+	CompanyID    uuid.UUID
+	IikoURL      string
+	IikoLogin    string
+	IikoPassword string
+	Locations    []LocationSync
 }
 
 type LocationSync struct {
@@ -32,14 +35,14 @@ type LocationSync struct {
 	Name       string
 }
 
-// GetCompaniesToSync fetches all companies with iiko API keys configured.
+// GetCompaniesToSync fetches all companies with iiko credentials configured.
 func (s *Service) GetCompaniesToSync(ctx context.Context) ([]CompanySync, error) {
 	rows, err := s.db.Query(ctx,
-		`SELECT c.id, c.iiko_api_key, l.id, l.iiko_org_id, l.name
+		`SELECT c.id, c.iiko_server_url, c.iiko_login, c.iiko_password, l.id, COALESCE(l.iiko_org_id, ''), l.name
 		 FROM companies c
 		 JOIN locations l ON l.company_id = c.id
-		 WHERE c.iiko_api_key IS NOT NULL AND c.iiko_api_key != ''
-		   AND l.iiko_org_id IS NOT NULL AND l.iiko_org_id != ''
+		 WHERE c.iiko_server_url IS NOT NULL AND c.iiko_server_url != ''
+		   AND c.iiko_login IS NOT NULL AND c.iiko_login != ''
 		 ORDER BY c.id, l.id`)
 	if err != nil {
 		return nil, fmt.Errorf("query companies: %w", err)
@@ -51,14 +54,14 @@ func (s *Service) GetCompaniesToSync(ctx context.Context) ([]CompanySync, error)
 
 	for rows.Next() {
 		var cid, lid uuid.UUID
-		var apiKey, orgID, locName string
-		if err := rows.Scan(&cid, &apiKey, &lid, &orgID, &locName); err != nil {
+		var iikoURL, iikoLogin, iikoPass, orgID, locName string
+		if err := rows.Scan(&cid, &iikoURL, &iikoLogin, &iikoPass, &lid, &orgID, &locName); err != nil {
 			return nil, fmt.Errorf("scan row: %w", err)
 		}
 
 		cs, ok := companyMap[cid]
 		if !ok {
-			cs = &CompanySync{CompanyID: cid, IikoAPIKey: apiKey}
+			cs = &CompanySync{CompanyID: cid, IikoURL: iikoURL, IikoLogin: iikoLogin, IikoPassword: iikoPass}
 			companyMap[cid] = cs
 			order = append(order, cid)
 		}
@@ -74,7 +77,31 @@ func (s *Service) GetCompaniesToSync(ctx context.Context) ([]CompanySync, error)
 	return result, nil
 }
 
-// SyncRevenue pulls revenue/orders data from iiko for a location.
+// Helper to safely extract string from OLAP row map.
+func getString(row map[string]interface{}, key string) string {
+	v, ok := row[key]
+	if !ok || v == nil {
+		return ""
+	}
+	s, _ := v.(string)
+	return s
+}
+
+// Helper to safely extract float from OLAP row map.
+func getFloat(row map[string]interface{}, key string) float64 {
+	v, ok := row[key]
+	if !ok || v == nil {
+		return 0
+	}
+	f, ok := v.(float64)
+	if ok {
+		return f
+	}
+	// JSON numbers might be decoded as json.Number
+	return 0
+}
+
+// SyncRevenue pulls revenue/orders data from iiko Server API.
 func (s *Service) SyncRevenue(ctx context.Context, client *iiko.Client, companyID, locationID uuid.UUID, iikoOrgID string) error {
 	logID, err := s.startSyncLog(ctx, companyID, locationID, "revenue")
 	if err != nil {
@@ -83,14 +110,22 @@ func (s *Service) SyncRevenue(ctx context.Context, client *iiko.Client, companyI
 	start := time.Now()
 
 	dateTo := time.Now().Format("2006-01-02")
-	dateFrom := time.Now().AddDate(0, 0, -7).Format("2006-01-02")
+	dateFrom := time.Date(2026, 1, 1, 0, 0, 0, 0, time.Local).Format("2006-01-02")
 
 	report, err := client.GetOLAPReport(ctx, iiko.OLAPReportRequest{
-		OrganizationID:   iikoOrgID,
-		DateFrom:         dateFrom,
-		DateTo:           dateTo,
-		GroupByRowFields: []string{"OrderId", "OpenDate.Typed", "OrderType", "WaiterName", "OrderDeleted"},
+		ReportType:       "SALES",
+		GroupByRowFields: []string{"UniqOrderId.Id", "OpenDate.Typed"},
+		GroupByColFields: []string{},
 		AggregateFields:  []string{"DishDiscountSumInt", "DishSumInt", "DishAmountInt"},
+		Filters: map[string]interface{}{
+			"OpenDate.Typed": map[string]interface{}{
+				"filterType": "DateRange",
+				"periodType": "CUSTOM",
+				"from":       dateFrom,
+				"to":         dateTo,
+				"includeLow": true, "includeHigh": true,
+			},
+		},
 	})
 	if err != nil {
 		s.failSyncLog(ctx, logID, start, err)
@@ -99,19 +134,31 @@ func (s *Service) SyncRevenue(ctx context.Context, client *iiko.Client, companyI
 
 	count := 0
 	for _, row := range report.Data {
-		if len(row) < 6 {
+		orderID := getString(row, "UniqOrderId.Id")
+		if orderID == "" {
 			continue
 		}
-		orderID, _ := row[0].(string)
-		revenue, _ := row[4].(float64)
-		discount, _ := row[3].(float64)
+		orderDate := getString(row, "OpenDate.Typed")
+		discount := getFloat(row, "DishDiscountSumInt")
+		revenue := getFloat(row, "DishSumInt")
+		itemCount := int(getFloat(row, "DishAmountInt"))
+
+		orderType := "dine-in"
+		status := "closed"
+		waiterName := ""
+
+		parsedDate, _ := time.Parse("2006-01-02", orderDate)
+		if parsedDate.IsZero() {
+			parsedDate = time.Now()
+		}
 
 		_, err := s.db.Exec(ctx,
-			`INSERT INTO revenue_facts (company_id, location_id, iiko_order_id, order_date, revenue, discount, order_type, status, synced_at)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+			`INSERT INTO revenue_facts (company_id, location_id, iiko_order_id, order_date, revenue, discount, order_type, status, waiter_name, item_count, synced_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
 			 ON CONFLICT (company_id, iiko_order_id) DO UPDATE SET
-			   revenue = EXCLUDED.revenue, discount = EXCLUDED.discount, status = EXCLUDED.status, synced_at = NOW()`,
-			companyID, locationID, orderID, time.Now(), revenue, discount, "dine-in", "closed")
+			   revenue = EXCLUDED.revenue, discount = EXCLUDED.discount, status = EXCLUDED.status,
+			   waiter_name = EXCLUDED.waiter_name, item_count = EXCLUDED.item_count, synced_at = NOW()`,
+			companyID, locationID, orderID, parsedDate, revenue, discount, orderType, status, waiterName, itemCount)
 		if err != nil {
 			log.Warn().Err(err).Str("order_id", orderID).Msg("sync: failed to upsert revenue")
 			continue
@@ -124,7 +171,81 @@ func (s *Service) SyncRevenue(ctx context.Context, client *iiko.Client, companyI
 	return nil
 }
 
-// SyncPurchases pulls purchase invoices from iiko.
+// SyncProductSales pulls product-level sales data from iiko Server API.
+func (s *Service) SyncProductSales(ctx context.Context, client *iiko.Client, companyID, locationID uuid.UUID, iikoOrgID string) error {
+	logID, err := s.startSyncLog(ctx, companyID, locationID, "product_sales")
+	if err != nil {
+		return err
+	}
+	start := time.Now()
+
+	dateTo := time.Now().Format("2006-01-02")
+	dateFrom := time.Date(2026, 1, 1, 0, 0, 0, 0, time.Local).Format("2006-01-02")
+
+	report, err := client.GetOLAPReport(ctx, iiko.OLAPReportRequest{
+		ReportType:       "SALES",
+		GroupByRowFields: []string{"DishName", "DishGroup", "DishCategory", "UniqOrderId.Id", "OpenDate.Typed"},
+		GroupByColFields: []string{},
+		AggregateFields:  []string{"DishAmountInt", "DishSumInt", "DishDiscountSumInt"},
+		Filters: map[string]interface{}{
+			"OpenDate.Typed": map[string]interface{}{
+				"filterType": "DateRange",
+				"periodType": "CUSTOM",
+				"from":       dateFrom,
+				"to":         dateTo,
+				"includeLow": true, "includeHigh": true,
+			},
+		},
+	})
+	if err != nil {
+		s.failSyncLog(ctx, logID, start, err)
+		return fmt.Errorf("fetch product sales report: %w", err)
+	}
+
+	count := 0
+	for _, row := range report.Data {
+		dishName := getString(row, "DishName")
+		if dishName == "" {
+			continue
+		}
+		category := getString(row, "DishGroup") // Use group as category
+		if category == "" {
+			category = getString(row, "DishCategory")
+		}
+		orderID := getString(row, "UniqOrderId.Id")
+		saleDate := getString(row, "OpenDate.Typed")
+		quantity := getFloat(row, "DishAmountInt")
+		revenue := getFloat(row, "DishSumInt")
+		discount := getFloat(row, "DishDiscountSumInt")
+
+		// Generate stable product ID from name
+		h := sha256.Sum256([]byte(dishName))
+		productID := fmt.Sprintf("%x", h[:8])
+
+		parsedDate, _ := time.Parse("2006-01-02", saleDate)
+		if parsedDate.IsZero() {
+			parsedDate = time.Now()
+		}
+
+		_, err := s.db.Exec(ctx,
+			`INSERT INTO product_sales_facts (company_id, location_id, iiko_product_id, product_name, category, sale_date, quantity, revenue, cost_price, order_id, synced_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+			 ON CONFLICT (company_id, iiko_product_id, sale_date, order_id) DO UPDATE SET
+			   quantity = EXCLUDED.quantity, revenue = EXCLUDED.revenue, cost_price = EXCLUDED.cost_price, synced_at = NOW()`,
+			companyID, locationID, productID, dishName, category, parsedDate, quantity, revenue, discount, orderID)
+		if err != nil {
+			log.Warn().Err(err).Str("product", dishName).Msg("sync: failed to upsert product sale")
+			continue
+		}
+		count++
+	}
+
+	s.completeSyncLog(ctx, logID, start, count)
+	log.Info().Int("records", count).Str("location", locationID.String()).Msg("sync: product_sales complete")
+	return nil
+}
+
+// SyncPurchases pulls purchase invoices from iiko Server API.
 func (s *Service) SyncPurchases(ctx context.Context, client *iiko.Client, companyID, locationID uuid.UUID, iikoOrgID string) error {
 	logID, err := s.startSyncLog(ctx, companyID, locationID, "purchases")
 	if err != nil {
@@ -132,23 +253,33 @@ func (s *Service) SyncPurchases(ctx context.Context, client *iiko.Client, compan
 	}
 	start := time.Now()
 
-	dateTo := time.Now().Format("2006-01-02")
 	dateFrom := time.Now().AddDate(0, 0, -30).Format("2006-01-02")
+	dateTo := time.Now().Format("2006-01-02")
 
-	invoices, err := client.GetPurchaseInvoices(ctx, iikoOrgID, dateFrom, dateTo)
+	invoices, err := client.GetPurchaseInvoices(ctx, dateFrom, dateTo)
 	if err != nil {
 		s.failSyncLog(ctx, logID, start, err)
 		return fmt.Errorf("fetch purchases: %w", err)
 	}
 
+	// Resolve supplier names
+	supplierNames, _ := client.GetSuppliers(ctx)
+
 	count := 0
 	for _, inv := range invoices {
+		supplierName := inv.SupplierName
+		if supplierNames != nil {
+			if name, ok := supplierNames[inv.SupplierID]; ok {
+				supplierName = name
+			}
+		}
+
 		_, err := s.db.Exec(ctx,
 			`INSERT INTO purchase_facts (company_id, location_id, iiko_invoice_id, document_number, supplier_id, supplier_name, incoming_date, status, total_sum, synced_at)
 			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
 			 ON CONFLICT (company_id, iiko_invoice_id) DO UPDATE SET
-			   status = EXCLUDED.status, total_sum = EXCLUDED.total_sum, synced_at = NOW()`,
-			companyID, locationID, inv.ID, inv.DocumentNumber, inv.SupplierID, inv.SupplierName, inv.IncomingDate, inv.Status, inv.Sum)
+			   status = EXCLUDED.status, total_sum = EXCLUDED.total_sum, supplier_name = EXCLUDED.supplier_name, synced_at = NOW()`,
+			companyID, locationID, inv.ID, inv.DocumentNumber, inv.SupplierID, supplierName, inv.IncomingDate, inv.Status, inv.Sum)
 		if err != nil {
 			log.Warn().Err(err).Str("invoice_id", inv.ID).Msg("sync: failed to upsert purchase")
 			continue
@@ -161,7 +292,7 @@ func (s *Service) SyncPurchases(ctx context.Context, client *iiko.Client, compan
 	return nil
 }
 
-// SyncStock pulls current stock levels from iiko.
+// SyncStock pulls current stock levels from iiko Server API.
 func (s *Service) SyncStock(ctx context.Context, client *iiko.Client, companyID, locationID uuid.UUID, iikoOrgID string) error {
 	logID, err := s.startSyncLog(ctx, companyID, locationID, "stock")
 	if err != nil {
@@ -169,20 +300,32 @@ func (s *Service) SyncStock(ctx context.Context, client *iiko.Client, companyID,
 	}
 	start := time.Now()
 
-	items, err := client.GetStockBalance(ctx, iikoOrgID)
+	items, err := client.GetStockBalance(ctx)
 	if err != nil {
 		s.failSyncLog(ctx, logID, start, err)
 		return fmt.Errorf("fetch stock: %w", err)
 	}
 
+	// Resolve product names from nomenclature
+	nomenclature, _ := client.GetNomenclature(ctx)
+
 	count := 0
 	for _, item := range items {
+		productName := item.ProductName
+		unit := item.Unit
+		if nomenclature != nil {
+			if info, ok := nomenclature[item.ProductID]; ok {
+				productName = info.Name
+				unit = info.Unit
+			}
+		}
+
 		_, err := s.db.Exec(ctx,
 			`INSERT INTO stock_snapshots (company_id, location_id, iiko_product_id, product_name, amount, unit, cost_sum, snapshot_at, synced_at)
 			 VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())`,
-			companyID, locationID, item.ProductID, item.ProductName, item.Amount, item.Unit, item.Sum)
+			companyID, locationID, item.ProductID, productName, item.Amount, unit, item.Sum)
 		if err != nil {
-			log.Warn().Err(err).Str("product", item.ProductName).Msg("sync: failed to insert stock")
+			log.Warn().Err(err).Str("product", productName).Msg("sync: failed to insert stock")
 			continue
 		}
 		count++
@@ -198,6 +341,20 @@ func (s *Service) RefreshDashboardViews(ctx context.Context) error {
 	_, err := s.db.Exec(ctx, "REFRESH MATERIALIZED VIEW CONCURRENTLY dashboard_daily_revenue")
 	if err != nil {
 		log.Warn().Err(err).Msg("sync: failed to refresh dashboard view (may need initial data)")
+	}
+	return nil
+}
+
+// QueueSync inserts "queued" sync log entries for manual trigger.
+func (s *Service) QueueSync(ctx context.Context, companyID, locationID uuid.UUID) error {
+	for _, syncType := range []string{"revenue", "product_sales", "purchases", "stock"} {
+		_, err := s.db.Exec(ctx,
+			`INSERT INTO iiko_sync_log (id, company_id, location_id, sync_type, status, started_at)
+			 VALUES ($1, $2, $3, $4, 'queued', NOW())`,
+			uuid.New(), companyID, locationID, syncType)
+		if err != nil {
+			return fmt.Errorf("queue sync %s: %w", syncType, err)
+		}
 	}
 	return nil
 }

@@ -36,9 +36,14 @@ func main() {
 
 	log.Info().Msg("sync worker started")
 
-	// Revenue sync: every 15 minutes
+	// Revenue + product sales sync: every 15 minutes
 	go runTicker(ctx, 15*time.Minute, "revenue", func() {
 		runSync(ctx, syncService, "revenue")
+	})
+
+	// Product sales sync: every 15 minutes
+	go runTicker(ctx, 15*time.Minute, "product_sales", func() {
+		runSync(ctx, syncService, "product_sales")
 	})
 
 	// Purchase sync: every hour
@@ -92,7 +97,7 @@ func runSync(ctx context.Context, svc *gosync.Service, syncType string) {
 	}
 
 	for _, company := range companies {
-		client := iiko.NewClient(company.IikoAPIKey)
+		client := iiko.NewClient(company.IikoURL, company.IikoLogin, company.IikoPassword)
 
 		if err := client.Authenticate(ctx); err != nil {
 			log.Error().Err(err).Str("company", company.CompanyID.String()).Msg("sync: iiko auth failed")
@@ -108,6 +113,12 @@ func runSync(ctx context.Context, svc *gosync.Service, syncType string) {
 			if syncType == "all" || syncType == "revenue" {
 				if err := svc.SyncRevenue(ctx, client, company.CompanyID, loc.LocationID, loc.IikoOrgID); err != nil {
 					logger.Error().Err(err).Msg("sync: revenue failed")
+				}
+			}
+
+			if syncType == "all" || syncType == "product_sales" {
+				if err := svc.SyncProductSales(ctx, client, company.CompanyID, loc.LocationID, loc.IikoOrgID); err != nil {
+					logger.Error().Err(err).Msg("sync: product_sales failed")
 				}
 			}
 
