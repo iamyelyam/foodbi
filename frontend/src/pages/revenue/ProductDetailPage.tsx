@@ -60,7 +60,7 @@ export function ProductDetailPage() {
               <div className="grid grid-cols-2 gap-3 mt-4">
                 <div className="bg-bg rounded-[12px] p-3">
                   <p className="text-xs text-gray">Total Revenue</p>
-                  <p className="text-lg font-bold text-dark mt-1">{totalRev.toFixed(2)}{cs}</p>
+                  <p className="text-lg font-bold text-dark mt-1">{totalRev.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</p>
                 </div>
                 <div className="bg-bg rounded-[12px] p-3">
                   <p className="text-xs text-gray">Total Sold</p>
@@ -74,15 +74,15 @@ export function ProductDetailPage() {
               <div className="grid grid-cols-3 gap-2">
                 <div className="bg-white rounded-[12px] p-3 shadow-sm text-center">
                   <p className="text-xs text-gray">Avg Daily</p>
-                  <p className="text-sm font-bold text-dark mt-1">{avgDaily.toFixed(0)}{cs}</p>
+                  <p className="text-sm font-bold text-dark mt-1">{avgDaily.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</p>
                 </div>
                 <div className="bg-white rounded-[12px] p-3 shadow-sm text-center">
                   <p className="text-xs text-gray">Best Day</p>
-                  <p className="text-sm font-bold text-success mt-1">{bestDay.toFixed(0)}{cs}</p>
+                  <p className="text-sm font-bold text-success mt-1">{bestDay.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</p>
                 </div>
                 <div className="bg-white rounded-[12px] p-3 shadow-sm text-center">
                   <p className="text-xs text-gray">Worst Day</p>
-                  <p className="text-sm font-bold text-danger mt-1">{worstDay.toFixed(0)}{cs}</p>
+                  <p className="text-sm font-bold text-danger mt-1">{worstDay.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</p>
                 </div>
               </div>
             )}
@@ -107,7 +107,7 @@ export function ProductDetailPage() {
                         <p className="text-xs text-gray">{new Date(o.order_date).toLocaleDateString()}</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm font-semibold text-dark">{o.revenue?.toFixed(2)}{cs}</p>
+                        <p className="text-sm font-semibold text-dark">{o.revenue?.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</p>
                         <p className="text-xs text-gray">{o.quantity} pcs</p>
                       </div>
                     </div>

@@ -149,7 +149,7 @@ export function SupplyingPage() {
                   <p className="text-xs text-gray mt-0.5">{new Date(req.created_at).toLocaleDateString()}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <p className="text-sm font-semibold text-dark">{req.total_sum.toFixed(2)}{cs}</p>
+                  <p className="text-sm font-semibold text-dark">{req.total_sum.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</p>
                   <span className={cn('flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium', color)}>
                     <Icon className="h-3 w-3" /> {req.status}
                   </span>

@@ -89,8 +89,8 @@ func (h *Handler) ListOrders(w http.ResponseWriter, r *http.Request) {
 		argIdx++
 	}
 	if dateTo != "" {
-		query += ` AND order_date <= $` + strconv.Itoa(argIdx)
-		countQuery += ` AND order_date <= $` + strconv.Itoa(argIdx)
+		query += ` AND order_date < ($` + strconv.Itoa(argIdx) + `::date + 1)`
+		countQuery += ` AND order_date < ($` + strconv.Itoa(argIdx) + `::date + 1)`
 		args = append(args, dateTo)
 		argIdx++
 	}
@@ -181,7 +181,7 @@ func (h *Handler) ListProducts(w http.ResponseWriter, r *http.Request) {
 		argIdx++
 	}
 	if dateTo != "" {
-		query += ` AND sale_date <= $` + strconv.Itoa(argIdx)
+		query += ` AND sale_date < ($` + strconv.Itoa(argIdx) + `::date + 1)`
 		args = append(args, dateTo)
 		argIdx++
 	}

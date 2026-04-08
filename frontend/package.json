@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint:money": "bash scripts/lint-money.sh"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.2",

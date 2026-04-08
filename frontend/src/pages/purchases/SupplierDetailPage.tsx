@@ -39,7 +39,7 @@ export function SupplierDetailPage() {
               <div className="grid grid-cols-2 gap-3 mt-4 w-full">
                 <div className="bg-bg rounded-[12px] p-3 text-center">
                   <p className="text-xs text-gray">Total Spend</p>
-                  <p className="text-lg font-bold text-dark mt-1">{supplier.total_sum?.toFixed(0)}{cs}</p>
+                  <p className="text-lg font-bold text-dark mt-1">{supplier.total_sum?.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</p>
                 </div>
                 <div className="bg-bg rounded-[12px] p-3 text-center">
                   <p className="text-xs text-gray">Invoices</p>
@@ -84,7 +84,7 @@ export function SupplierDetailPage() {
                       <p className="text-xs text-gray">{new Date(p.incoming_date).toLocaleDateString()}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm font-semibold text-dark">{p.total_sum?.toFixed(2)}{cs}</p>
+                      <p className="text-sm font-semibold text-dark">{p.total_sum?.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</p>
                       <span
                         className={cn(
                           'text-xs font-medium',

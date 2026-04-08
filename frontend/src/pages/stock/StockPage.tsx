@@ -87,7 +87,7 @@ export function StockPage() {
                   <p className={cn('text-sm font-bold', isLow ? 'text-danger' : 'text-dark')}>
                     {item.amount} {item.unit}
                   </p>
-                  <p className="text-xs text-gray">{(item.cost_sum ?? 0).toFixed(2)}{cs}</p>
+                  <p className="text-xs text-gray">{(item.cost_sum ?? 0).toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</p>
                 </div>
               </div>
             </button>
@@ -115,7 +115,7 @@ export function StockPage() {
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray">Cost value</span>
-              <span className="font-semibold text-dark">{(selectedItem.cost_sum ?? 0).toFixed(2)}{cs}</span>
+              <span className="font-semibold text-dark">{(selectedItem.cost_sum ?? 0).toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray">Last synced</span>

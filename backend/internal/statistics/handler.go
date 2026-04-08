@@ -48,7 +48,7 @@ func (h *Handler) RevenueStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := `SELECT DATE(order_date), COALESCE(SUM(revenue), 0), COUNT(*)
-		FROM revenue_facts WHERE company_id = $1 AND order_date >= $2 AND order_date <= $3`
+		FROM revenue_facts WHERE company_id = $1 AND order_date >= $2 AND order_date < ($3::date + 1)`
 	args := []interface{}{companyID, dateFrom, dateTo}
 
 	if locationID != "" {
@@ -95,7 +95,7 @@ func (h *Handler) ProfitStats(w http.ResponseWriter, r *http.Request) {
 
 	// Revenue per day
 	revQuery := `SELECT DATE(order_date) as d, COALESCE(SUM(revenue), 0)
-		FROM revenue_facts WHERE company_id = $1 AND order_date >= $2 AND order_date <= $3`
+		FROM revenue_facts WHERE company_id = $1 AND order_date >= $2 AND order_date < ($3::date + 1)`
 	revArgs := []interface{}{companyID, dateFrom, dateTo}
 	if locationID != "" {
 		revQuery += ` AND location_id = $4`
@@ -105,7 +105,7 @@ func (h *Handler) ProfitStats(w http.ResponseWriter, r *http.Request) {
 
 	// Cost per day
 	costQuery := `SELECT DATE(incoming_date) as d, COALESCE(SUM(total_sum), 0)
-		FROM purchase_facts WHERE company_id = $1 AND incoming_date >= $2 AND incoming_date <= $3`
+		FROM purchase_facts WHERE company_id = $1 AND incoming_date >= $2 AND incoming_date < ($3::date + 1)`
 	costArgs := []interface{}{companyID, dateFrom, dateTo}
 	if locationID != "" {
 		costQuery += ` AND location_id = $4`

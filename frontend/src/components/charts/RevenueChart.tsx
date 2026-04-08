@@ -33,7 +33,7 @@ export function RevenueChart({ data, height = 200 }: RevenueChartProps) {
         <YAxis tick={{ fontSize: 10, fill: '#A4A2B7' }} />
         <Tooltip
           contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-          formatter={(value) => [`${Number(value).toFixed(2)}${cs}`, 'Revenue']}
+          formatter={(value) => [`${Number(value).toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}${cs}`, 'Revenue']}
         />
         <Area type="monotone" dataKey="revenue" stroke="#6ADEBF" fill="url(#revGradient)" strokeWidth={2} />
       </AreaChart>

@@ -30,7 +30,7 @@ export function EmployeeHomePage() {
               <span className="text-xs text-primary font-medium bg-primary-lighter px-2 py-0.5 rounded-full">Today</span>
             </div>
             <p className="text-3xl font-bold text-dark">
-              {(summary?.today_revenue ?? 0).toLocaleString('en', { minimumFractionDigits: 2 })}{cs}
+              {(summary?.today_revenue ?? 0).toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}
             </p>
             <div className="flex items-center gap-1.5 mt-1">
               {isPositive ? <TrendingUp className="h-3.5 w-3.5 text-success" /> : <TrendingDown className="h-3.5 w-3.5 text-danger" />}

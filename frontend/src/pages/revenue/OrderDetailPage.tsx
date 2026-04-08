@@ -75,12 +75,12 @@ export function OrderDetailPage() {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray">Total</span>
-                <span className="text-xl font-bold text-dark">{order.revenue?.toFixed(2)}{cs}</span>
+                <span className="text-xl font-bold text-dark">{order.revenue?.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</span>
               </div>
               {order.discount > 0 && (
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray">Discount</span>
-                  <span className="text-sm text-danger">-{order.discount?.toFixed(2)}{cs}</span>
+                  <span className="text-sm text-danger">-{order.discount?.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</span>
                 </div>
               )}
               <div className="flex items-center justify-between">
@@ -116,11 +116,11 @@ export function OrderDetailPage() {
                       <div className="flex-1 min-w-0 mr-3">
                         <p className="text-sm font-medium text-dark truncate">{item.product_name || item.name}</p>
                         <p className="text-xs text-gray">
-                          {item.quantity} × {item.price?.toFixed(2)}{cs}
+                          {item.quantity} × {item.price?.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}
                         </p>
                       </div>
                       <span className="text-sm font-semibold text-dark shrink-0">
-                        {(item.quantity * item.price)?.toFixed(2)}{cs}
+                        {(item.quantity * item.price)?.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}
                       </span>
                     </div>
                   ))}

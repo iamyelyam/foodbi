@@ -87,7 +87,7 @@ func (h *Handler) ListPurchases(w http.ResponseWriter, r *http.Request) {
 		argIdx++
 	}
 	if dateTo != "" {
-		f := ` AND incoming_date <= $` + strconv.Itoa(argIdx)
+		f := ` AND incoming_date < ($` + strconv.Itoa(argIdx) + `::date + 1)`
 		query += f
 		countQuery += f
 		args = append(args, dateTo)

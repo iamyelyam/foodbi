@@ -114,7 +114,7 @@ export function PurchasesPage() {
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm font-semibold text-dark">{p.total_sum.toFixed(2)}{cs}</p>
+                  <p className="text-sm font-semibold text-dark">{p.total_sum.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</p>
                   <span className={cn(
                     'text-xs px-2 py-0.5 rounded-full',
                     p.status === 'processed' ? 'bg-success/10 text-success' : 'bg-bg-alt text-gray'
@@ -144,7 +144,7 @@ export function PurchasesPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <p className="text-sm font-semibold text-dark">{s.total_sum.toFixed(2)}{cs}</p>
+                  <p className="text-sm font-semibold text-dark">{s.total_sum.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</p>
                   <ChevronRight className="h-4 w-4 text-gray-light" />
                 </div>
               </div>
@@ -182,7 +182,7 @@ export function PurchasesPage() {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray">Total</span>
-                <span className="font-semibold text-dark">{purchaseDetail.total_sum?.toFixed(2)}{cs}</span>
+                <span className="font-semibold text-dark">{purchaseDetail.total_sum?.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</span>
               </div>
             </div>
 
@@ -194,10 +194,10 @@ export function PurchasesPage() {
                     <div key={idx} className="bg-bg rounded-[12px] p-3">
                       <div className="flex items-center justify-between">
                         <p className="text-sm font-medium text-dark">{item.product_name}</p>
-                        <p className="text-sm font-semibold text-dark">{item.subtotal?.toFixed(2)}{cs}</p>
+                        <p className="text-sm font-semibold text-dark">{item.subtotal?.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</p>
                       </div>
                       <p className="text-xs text-gray mt-0.5">
-                        {item.quantity} {item.unit} x {item.price?.toFixed(2)}{cs}
+                        {item.quantity} {item.unit} x {item.price?.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}
                       </p>
                     </div>
                   ))}
@@ -216,7 +216,7 @@ export function PurchasesPage() {
           <div className="space-y-3">
             <div className="flex justify-between text-sm">
               <span className="text-gray">Total purchases</span>
-              <span className="font-semibold">{selectedSupplier.total_sum.toFixed(2)}{cs}</span>
+              <span className="font-semibold">{selectedSupplier.total_sum.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray">Invoices</span>

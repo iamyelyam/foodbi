@@ -113,6 +113,8 @@ func runSync(ctx context.Context, svc *gosync.Service, syncType string) {
 			if syncType == "all" || syncType == "revenue" {
 				if err := svc.SyncRevenue(ctx, client, company.CompanyID, loc.LocationID, loc.IikoOrgID); err != nil {
 					logger.Error().Err(err).Msg("sync: revenue failed")
+				} else {
+					svc.ValidateRevenueAfterSync(ctx, company.CompanyID, loc.LocationID)
 				}
 			}
 

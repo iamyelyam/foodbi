@@ -103,7 +103,7 @@ export function RevenuePage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-semibold text-dark">
-                    {order.revenue.toFixed(2)}{cs}
+                    {order.revenue.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}
                   </p>
                   <p className="text-xs text-gray mt-0.5">
                     {new Date(order.order_date).toLocaleDateString()} - {order.item_count} items
@@ -136,7 +136,7 @@ export function RevenuePage() {
                   <p className="text-xs text-gray mt-0.5">{p.category || 'Uncategorized'}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm font-semibold text-dark">{p.total_revenue.toFixed(2)}{cs}</p>
+                  <p className="text-sm font-semibold text-dark">{p.total_revenue.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</p>
                   <p className="text-xs text-gray">{p.total_quantity} sold</p>
                 </div>
               </div>
