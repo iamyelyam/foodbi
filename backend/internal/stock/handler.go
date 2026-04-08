@@ -3,6 +3,7 @@ package stock
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/foodbi/backend/internal/middleware"
@@ -82,7 +83,7 @@ func (h *Handler) LowStock(w http.ResponseWriter, r *http.Request) {
 	argIdx := 3
 
 	if locationID != "" {
-		query += ` AND location_id = $` + string(rune('0'+argIdx))
+		query += ` AND location_id = $` + strconv.Itoa(argIdx)
 		args = append(args, locationID)
 	}
 	query += ` ORDER BY iiko_product_id, snapshot_at DESC`

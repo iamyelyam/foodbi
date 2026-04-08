@@ -24,6 +24,7 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/", h.List)
 	r.Post("/{id}/read", h.MarkRead)
 	r.Get("/unread-count", h.UnreadCount)
+	r.Post("/read-all", h.MarkAllRead)
 	return r
 }
 
@@ -86,6 +87,18 @@ func (h *Handler) UnreadCount(w http.ResponseWriter, r *http.Request) {
 		userID, companyID).Scan(&count)
 
 	writeJSON(w, http.StatusOK, map[string]int{"count": count})
+}
+
+func (h *Handler) MarkAllRead(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	companyID := middleware.GetCompanyID(r.Context())
+
+	h.db.Exec(r.Context(),
+		`UPDATE notifications SET is_read = true
+		 WHERE (user_id = $1 OR user_id IS NULL) AND company_id = $2 AND is_read = false`,
+		userID, companyID)
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "all read"})
 }
 
 // CreateNotification is called internally by other services.

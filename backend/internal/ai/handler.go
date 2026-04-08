@@ -2,6 +2,7 @@ package ai
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -189,7 +190,7 @@ func (h *Handler) ListTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func formatPercent(v float64) string {
-	return json.Number(json.Number(string(rune(int(v)+'0')))).String()
+	return fmt.Sprintf("%.1f", v)
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {

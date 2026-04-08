@@ -30,6 +30,7 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/{id}", h.Get)
 	r.Put("/{id}/role", h.UpdateRole)
 	r.Put("/{id}/locations", h.AssignLocations)
+	r.Post("/{id}/deactivate", h.Deactivate)
 	return r
 }
 
@@ -185,6 +186,32 @@ func (h *Handler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"role": input.Role})
+}
+
+func (h *Handler) Deactivate(w http.ResponseWriter, r *http.Request) {
+	role := middleware.GetRole(r.Context())
+	if role != "owner" {
+		writeError(w, http.StatusForbidden, "only owners can deactivate employees")
+		return
+	}
+
+	companyID := middleware.GetCompanyID(r.Context())
+	userID := middleware.GetUserID(r.Context())
+	id := chi.URLParam(r, "id")
+
+	if id == userID.String() {
+		writeError(w, http.StatusBadRequest, "cannot deactivate yourself")
+		return
+	}
+
+	tag, err := h.db.Exec(r.Context(),
+		`UPDATE users SET is_active = false, updated_at = NOW() WHERE id = $1 AND company_id = $2 AND is_active = true`,
+		id, companyID)
+	if err != nil || tag.RowsAffected() == 0 {
+		writeError(w, http.StatusNotFound, "employee not found or already deactivated")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deactivated"})
 }
 
 func (h *Handler) AssignLocations(w http.ResponseWriter, r *http.Request) {

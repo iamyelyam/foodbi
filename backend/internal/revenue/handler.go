@@ -24,8 +24,11 @@ func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
 	r.Get("/orders", h.ListOrders)
 	r.Get("/orders/{id}", h.GetOrder)
+	r.Post("/orders/{id}/status", h.UpdateOrderStatus)
 	r.Get("/products", h.ListProducts)
 	r.Get("/products/{id}", h.GetProductDetails)
+	r.Get("/products/{id}/trend", h.GetProductTrend)
+	r.Get("/products/{id}/orders", h.GetProductOrders)
 	return r
 }
 
@@ -244,6 +247,120 @@ func (h *Handler) GetProductDetails(w http.ResponseWriter, r *http.Request) {
 		sales = []DaySales{}
 	}
 	writeJSON(w, http.StatusOK, sales)
+}
+
+func (h *Handler) UpdateOrderStatus(w http.ResponseWriter, r *http.Request) {
+	role := middleware.GetRole(r.Context())
+	if role != "owner" {
+		writeError(w, http.StatusForbidden, "only owners can change order status")
+		return
+	}
+
+	companyID := middleware.GetCompanyID(r.Context())
+	orderID := chi.URLParam(r, "id")
+
+	var input struct {
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if input.Status != "approved" && input.Status != "rejected" {
+		writeError(w, http.StatusBadRequest, "status must be 'approved' or 'rejected'")
+		return
+	}
+
+	tag, err := h.db.Exec(r.Context(),
+		`UPDATE revenue_facts SET status = $1 WHERE id = $2 AND company_id = $3`,
+		input.Status, orderID, companyID)
+	if err != nil || tag.RowsAffected() == 0 {
+		writeError(w, http.StatusNotFound, "order not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": input.Status})
+}
+
+func (h *Handler) GetProductTrend(w http.ResponseWriter, r *http.Request) {
+	companyID := middleware.GetCompanyID(r.Context())
+	productID := chi.URLParam(r, "id")
+
+	rows, err := h.db.Query(r.Context(),
+		`SELECT sale_date, SUM(quantity), SUM(revenue)
+		 FROM product_sales_facts
+		 WHERE company_id = $1 AND iiko_product_id = $2 AND sale_date >= NOW() - INTERVAL '30 days'
+		 GROUP BY sale_date ORDER BY sale_date`,
+		companyID, productID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to fetch trend")
+		return
+	}
+	defer rows.Close()
+
+	type TrendPoint struct {
+		Date     string  `json:"date"`
+		Revenue  float64 `json:"revenue"`
+		Quantity float64 `json:"quantity"`
+	}
+
+	var points []TrendPoint
+	for rows.Next() {
+		var p TrendPoint
+		var d time.Time
+		if err := rows.Scan(&d, &p.Quantity, &p.Revenue); err != nil {
+			continue
+		}
+		p.Date = d.Format("2006-01-02")
+		points = append(points, p)
+	}
+	if points == nil {
+		points = []TrendPoint{}
+	}
+	writeJSON(w, http.StatusOK, points)
+}
+
+func (h *Handler) GetProductOrders(w http.ResponseWriter, r *http.Request) {
+	companyID := middleware.GetCompanyID(r.Context())
+	productID := chi.URLParam(r, "id")
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit < 1 || limit > 50 {
+		limit = 10
+	}
+
+	rows, err := h.db.Query(r.Context(),
+		`SELECT DISTINCT rf.id, rf.order_date, psf.revenue, psf.quantity
+		 FROM product_sales_facts psf
+		 JOIN revenue_facts rf ON rf.id = psf.order_id AND rf.company_id = psf.company_id
+		 WHERE psf.company_id = $1 AND psf.iiko_product_id = $2
+		 ORDER BY rf.order_date DESC LIMIT $3`,
+		companyID, productID, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to fetch orders")
+		return
+	}
+	defer rows.Close()
+
+	type OrderRef struct {
+		OrderID   string  `json:"order_id"`
+		OrderDate string  `json:"order_date"`
+		Revenue   float64 `json:"revenue"`
+		Quantity  float64 `json:"quantity"`
+	}
+
+	var orders []OrderRef
+	for rows.Next() {
+		var o OrderRef
+		var d time.Time
+		if err := rows.Scan(&o.OrderID, &d, &o.Revenue, &o.Quantity); err != nil {
+			continue
+		}
+		o.OrderDate = d.Format(time.RFC3339)
+		orders = append(orders, o)
+	}
+	if orders == nil {
+		orders = []OrderRef{}
+	}
+	writeJSON(w, http.StatusOK, orders)
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {

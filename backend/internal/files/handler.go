@@ -33,6 +33,7 @@ func (h *Handler) Routes() chi.Router {
 	r.Post("/upload", h.Upload)
 	r.Get("/", h.List)
 	r.Get("/{id}", h.Get)
+	r.Delete("/{id}", h.DeleteFile)
 	return r
 }
 
@@ -139,6 +140,24 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	f.CreatedAt = t.Format(time.RFC3339)
 	writeJSON(w, http.StatusOK, f)
+}
+
+func (h *Handler) DeleteFile(w http.ResponseWriter, r *http.Request) {
+	companyID := middleware.GetCompanyID(r.Context())
+	id := chi.URLParam(r, "id")
+
+	var storedName string
+	err := h.db.QueryRow(r.Context(),
+		`SELECT stored_name FROM uploaded_files WHERE id = $1 AND company_id = $2`, id, companyID).Scan(&storedName)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "file not found")
+		return
+	}
+
+	h.db.Exec(r.Context(), `DELETE FROM uploaded_files WHERE id = $1 AND company_id = $2`, id, companyID)
+	os.Remove(filepath.Join(h.uploadDir, storedName))
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {

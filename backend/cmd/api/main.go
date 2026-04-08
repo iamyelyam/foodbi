@@ -70,6 +70,8 @@ func main() {
 	r.Use(middleware.Logger)
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.Timeout(30 * time.Second))
+	r.Use(middleware.SecurityHeaders)
+	r.Use(middleware.MaxBodySize(10 << 20)) // 10MB max request body
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},

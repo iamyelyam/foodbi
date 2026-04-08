@@ -3,6 +3,7 @@ package transfers
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/foodbi/backend/internal/middleware"
@@ -27,6 +28,8 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/", h.ListTransfers)
 	r.Post("/", h.CreateTransfer)
 	r.Get("/{id}", h.GetTransfer)
+	r.Post("/{id}/complete", h.CompleteTransfer)
+	r.Post("/{id}/cancel", h.CancelTransfer)
 	return r
 }
 
@@ -198,8 +201,36 @@ func (h *Handler) GetTransfer(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, t)
 }
 
+func (h *Handler) updateTransferStatus(w http.ResponseWriter, r *http.Request, newStatus string) {
+	role := middleware.GetRole(r.Context())
+	if role != "owner" {
+		writeError(w, http.StatusForbidden, "only owners can update transfer status")
+		return
+	}
+
+	companyID := middleware.GetCompanyID(r.Context())
+	id := chi.URLParam(r, "id")
+
+	tag, err := h.db.Exec(r.Context(),
+		`UPDATE transfer_requests SET status = $1 WHERE id = $2 AND company_id = $3 AND status = 'pending'`,
+		newStatus, id, companyID)
+	if err != nil || tag.RowsAffected() == 0 {
+		writeError(w, http.StatusNotFound, "transfer not found or not pending")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"id": id, "status": newStatus})
+}
+
+func (h *Handler) CompleteTransfer(w http.ResponseWriter, r *http.Request) {
+	h.updateTransferStatus(w, r, "completed")
+}
+
+func (h *Handler) CancelTransfer(w http.ResponseWriter, r *http.Request) {
+	h.updateTransferStatus(w, r, "cancelled")
+}
+
 func itoa(i int) string {
-	return string(rune('0' + i))
+	return strconv.Itoa(i)
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {

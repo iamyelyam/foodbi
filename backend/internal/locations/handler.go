@@ -27,6 +27,7 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/", h.List)
 	r.Post("/", h.Create)
 	r.Get("/sync-status", h.SyncStatus)
+	r.Post("/{id}/sync", h.TriggerSync)
 	return r
 }
 
@@ -157,6 +158,37 @@ func nilIfEmpty(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+func (h *Handler) TriggerSync(w http.ResponseWriter, r *http.Request) {
+	companyID := middleware.GetCompanyID(r.Context())
+	id := chi.URLParam(r, "id")
+
+	// Verify location belongs to company
+	var exists bool
+	h.db.QueryRow(r.Context(),
+		`SELECT EXISTS(SELECT 1 FROM locations WHERE id = $1 AND company_id = $2)`,
+		id, companyID).Scan(&exists)
+	if !exists {
+		writeError(w, http.StatusNotFound, "location not found")
+		return
+	}
+
+	locUUID, err := uuid.Parse(id)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid location id")
+		return
+	}
+
+	// Queue sync for all types
+	for _, syncType := range []string{"revenue", "product_sales", "purchases", "stock"} {
+		h.db.Exec(r.Context(),
+			`INSERT INTO iiko_sync_log (id, company_id, location_id, sync_type, status, started_at)
+			 VALUES ($1, $2, $3, $4, 'queued', NOW())`,
+			uuid.New(), companyID, locUUID, syncType)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "sync_queued", "location_id": id})
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {

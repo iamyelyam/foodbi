@@ -25,50 +25,114 @@ func (h *Handler) Routes() chi.Router {
 	return r
 }
 
+type SupplierSummary struct {
+	SupplierName string  `json:"supplier_name"`
+	TotalSum     float64 `json:"total_sum"`
+}
+
 type DashboardSummary struct {
-	TodayRevenue      float64 `json:"today_revenue"`
-	TodayOrders       int     `json:"today_orders"`
-	TodayPurchases    float64 `json:"today_purchases"`
-	WeekRevenue       float64 `json:"week_revenue"`
-	WeekOrders        int     `json:"week_orders"`
-	PrevWeekRevenue   float64 `json:"prev_week_revenue"`
-	RevenueChangePercent float64 `json:"revenue_change_percent"`
+	TodayRevenue         float64           `json:"today_revenue"`
+	TodayOrders          int               `json:"today_orders"`
+	TodayPurchases       float64           `json:"today_purchases"`
+	TodayPurchaseCount   int               `json:"today_purchase_count"`
+	WeekRevenue          float64           `json:"week_revenue"`
+	WeekOrders           int               `json:"week_orders"`
+	WeekPurchases        float64           `json:"week_purchases"`
+	WeekPurchaseCount    int               `json:"week_purchase_count"`
+	TodayProfit          float64           `json:"today_profit"`
+	WeekProfit           float64           `json:"week_profit"`
+	PrevWeekRevenue      float64           `json:"prev_week_revenue"`
+	RevenueChangePercent float64           `json:"revenue_change_percent"`
+	TopSuppliers         []SupplierSummary `json:"top_suppliers"`
 }
 
 func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 	companyID := middleware.GetCompanyID(r.Context())
 	locationID := r.URL.Query().Get("location_id")
+	dateFromParam := r.URL.Query().Get("date_from")
+	dateToParam := r.URL.Query().Get("date_to")
 
-	today := time.Now().Truncate(24 * time.Hour)
-	weekStart := today.AddDate(0, 0, -int(today.Weekday()))
+	now := time.Now().Truncate(24 * time.Hour)
+	rangeStart := now
+	rangeEnd := now.AddDate(0, 0, 1) // exclusive end for >= start AND < end
+	weekStart := now.AddDate(0, 0, -int(now.Weekday()))
 	prevWeekStart := weekStart.AddDate(0, 0, -7)
+
+	customRange := false
+	if dateFromParam != "" && dateToParam != "" {
+		if df, err := time.Parse("2006-01-02", dateFromParam); err == nil {
+			rangeStart = df
+		}
+		if dt, err := time.Parse("2006-01-02", dateToParam); err == nil {
+			rangeEnd = dt.AddDate(0, 0, 1)
+		}
+		weekStart = rangeStart
+		prevWeekStart = rangeStart.AddDate(0, 0, -(int(rangeEnd.Sub(rangeStart).Hours()/24)))
+		customRange = true
+	}
+	_ = customRange
 
 	var summary DashboardSummary
 
-	// Today's revenue
+	// Revenue for selected range (or today)
 	locFilter := ""
-	args := []interface{}{companyID, today}
+	args := []interface{}{companyID, rangeStart, rangeEnd}
 	if locationID != "" {
-		locFilter = " AND location_id = $3"
+		locFilter = " AND location_id = $4"
 		args = append(args, locationID)
 	}
 
 	h.db.QueryRow(r.Context(),
 		`SELECT COALESCE(SUM(revenue), 0), COALESCE(COUNT(*), 0)
-		 FROM revenue_facts WHERE company_id = $1 AND order_date >= $2`+locFilter, args...).
+		 FROM revenue_facts WHERE company_id = $1 AND order_date >= $2 AND order_date < $3`+locFilter, args...).
 		Scan(&summary.TodayRevenue, &summary.TodayOrders)
 
-	// Today's purchases
-	purchArgs := []interface{}{companyID, today}
+	// Purchases for selected range
+	purchArgs := []interface{}{companyID, rangeStart, rangeEnd}
 	purchLocFilter := ""
 	if locationID != "" {
-		purchLocFilter = " AND location_id = $3"
+		purchLocFilter = " AND location_id = $4"
 		purchArgs = append(purchArgs, locationID)
 	}
 	h.db.QueryRow(r.Context(),
-		`SELECT COALESCE(SUM(total_sum), 0)
-		 FROM purchase_facts WHERE company_id = $1 AND incoming_date >= $2`+purchLocFilter, purchArgs...).
-		Scan(&summary.TodayPurchases)
+		`SELECT COALESCE(SUM(total_sum), 0), COALESCE(COUNT(*), 0)
+		 FROM purchase_facts WHERE company_id = $1 AND incoming_date >= $2 AND incoming_date < $3`+purchLocFilter, purchArgs...).
+		Scan(&summary.TodayPurchases, &summary.TodayPurchaseCount)
+
+	// This week purchases
+	weekPurchArgs := []interface{}{companyID, weekStart}
+	weekPurchLocFilter := ""
+	if locationID != "" {
+		weekPurchLocFilter = " AND location_id = $3"
+		weekPurchArgs = append(weekPurchArgs, locationID)
+	}
+	h.db.QueryRow(r.Context(),
+		`SELECT COALESCE(SUM(total_sum), 0), COALESCE(COUNT(*), 0)
+		 FROM purchase_facts WHERE company_id = $1 AND incoming_date >= $2`+weekPurchLocFilter, weekPurchArgs...).
+		Scan(&summary.WeekPurchases, &summary.WeekPurchaseCount)
+
+	// Top suppliers
+	topArgs := []interface{}{companyID, weekStart}
+	topLocFilter := ""
+	if locationID != "" {
+		topLocFilter = " AND location_id = $3"
+		topArgs = append(topArgs, locationID)
+	}
+	supRows, supErr := h.db.Query(r.Context(),
+		`SELECT COALESCE(supplier_name, 'Unknown'), SUM(total_sum)
+		 FROM purchase_facts WHERE company_id = $1 AND incoming_date >= $2`+topLocFilter+`
+		 GROUP BY supplier_name ORDER BY SUM(total_sum) DESC LIMIT 5`, topArgs...)
+	if supErr == nil {
+		defer supRows.Close()
+		for supRows.Next() {
+			var s SupplierSummary
+			supRows.Scan(&s.SupplierName, &s.TotalSum)
+			summary.TopSuppliers = append(summary.TopSuppliers, s)
+		}
+	}
+	if summary.TopSuppliers == nil {
+		summary.TopSuppliers = []SupplierSummary{}
+	}
 
 	// This week revenue
 	weekArgs := []interface{}{companyID, weekStart}
@@ -93,6 +157,12 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 		`SELECT COALESCE(SUM(revenue), 0)
 		 FROM revenue_facts WHERE company_id = $1 AND order_date >= $2 AND order_date < $3`+prevLocFilter, prevArgs...).
 		Scan(&summary.PrevWeekRevenue)
+
+	// Today's profit = revenue - purchases for today
+	summary.TodayProfit = summary.TodayRevenue - summary.TodayPurchases
+
+	// Week profit = week revenue - week purchases
+	summary.WeekProfit = summary.WeekRevenue - summary.WeekPurchases
 
 	if summary.PrevWeekRevenue > 0 {
 		summary.RevenueChangePercent = ((summary.WeekRevenue - summary.PrevWeekRevenue) / summary.PrevWeekRevenue) * 100
