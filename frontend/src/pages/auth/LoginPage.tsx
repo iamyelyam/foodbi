@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { ChevronLeft } from 'lucide-react'
 import api from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
+import { useT } from '@/i18n'
 
 const emailSchema = z.object({ email: z.string().email('Invalid email') })
 const passwordSchema = z.object({ password: z.string().min(8, 'Minimum 8 characters') })
@@ -16,6 +17,7 @@ type Step = 'email' | 'password'
 
 export function LoginPage() {
   const navigate = useNavigate()
+  const t = useT()
   const { setTokens } = useAuthStore()
   const [step, setStep] = useState<Step>('email')
   const [email, setEmail] = useState('')
@@ -56,10 +58,10 @@ export function LoginPage() {
 
       <div className="px-4 pt-12 pb-6">
         <h1 className="text-2xl font-bold text-dark">
-          {step === 'email' ? 'Enter your email' : 'Enter password'}
+          {step === 'email' ? t('auth.enterEmail') : t('auth.enterPassword')}
         </h1>
         <p className="mt-2 text-sm text-gray">
-          {step === 'email' ? 'Sign in to your FoodBI account' : email}
+          {step === 'email' ? t('auth.signIn') : email}
         </p>
       </div>
 
@@ -74,10 +76,10 @@ export function LoginPage() {
             {...emailForm.register('email')}
           />
           <div className="mt-auto pb-8">
-            <Button type="submit" fullWidth>Continue</Button>
+            <Button type="submit" fullWidth>{t('auth.continue')}</Button>
             <button type="button" onClick={() => navigate('/register')}
               className="mt-4 w-full text-center text-sm text-primary font-medium">
-              Don't have an account? Sign up
+              {t('auth.noAccount')}
             </button>
           </div>
         </form>
@@ -94,11 +96,11 @@ export function LoginPage() {
           {error && <p className="text-sm text-danger text-center">{error}</p>}
           <div className="mt-auto pb-8">
             <Button type="submit" fullWidth disabled={loading}>
-              {loading ? 'Signing in...' : 'Sign in'}
+              {loading ? t('auth.signingIn') : t('auth.signInBtn')}
             </Button>
             <button type="button" onClick={() => navigate('/forgot-password')}
               className="mt-4 w-full text-center text-sm text-gray">
-              Forgot password?
+              {t('auth.forgotPassword')}
             </button>
           </div>
         </form>

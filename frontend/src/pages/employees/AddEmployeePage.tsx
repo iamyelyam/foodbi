@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { BottomSheet } from '@/components/layout/BottomSheet'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Snackbar } from '@/components/ui/snackbar'
 import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
@@ -30,6 +31,7 @@ export function AddEmployeePage() {
   const [showRoles, setShowRoles] = useState(false)
   const [showLocations, setShowLocations] = useState(false)
   const [selectedLocs, setSelectedLocs] = useState<string[]>([])
+  const [showSuccess, setShowSuccess] = useState(false)
 
   const { register, handleSubmit, formState: { errors } } = useForm<Form>({ resolver: zodResolver(schema) })
 
@@ -39,13 +41,17 @@ export function AddEmployeePage() {
   })
 
   const mutation = useMutation({
-    mutationFn: (data: Form & { role: string }) => api.post('/employees', data),
-    onSuccess: (res) => {
+    mutationFn: async (data: Form & { role: string }) => {
+      const res = await api.post('/employees', data)
       if (selectedLocs.length > 0) {
-        api.put(`/employees/${res.data.id}/locations`, { location_ids: selectedLocs })
+        await api.put(`/employees/${res.data.id}/locations`, { location_ids: selectedLocs })
       }
+      return res
+    },
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['employees'] })
-      navigate('/employees')
+      setShowSuccess(true)
+      setTimeout(() => navigate('/employees'), 1500)
     },
   })
 
@@ -116,6 +122,13 @@ export function AddEmployeePage() {
         </div>
         <Button fullWidth className="mt-4" onClick={() => setShowLocations(false)}>Done</Button>
       </BottomSheet>
+
+      <Snackbar
+        isOpen={showSuccess}
+        onClose={() => setShowSuccess(false)}
+        message="Employee added successfully"
+        type="success"
+      />
     </div>
   )
 }

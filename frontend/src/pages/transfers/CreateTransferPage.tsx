@@ -5,7 +5,9 @@ import { Header } from '@/components/layout/Header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ProgressBar } from '@/components/ui/progress-bar'
+import { CategorySelector } from '@/components/CategorySelector'
 import { MapPin, Check, Minus, Plus } from 'lucide-react'
+import { Snackbar } from '@/components/ui/snackbar'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
 
@@ -16,10 +18,12 @@ export function CreateTransferPage() {
   const [step, setStep] = useState(0)
   const [fromLoc, setFromLoc] = useState<any>(null)
   const [toLoc, setToLoc] = useState<any>(null)
+  const [selectedCategory, setSelectedCategory] = useState('')
   const [items, setItems] = useState<Item[]>([])
   const [newName, setNewName] = useState('')
+  const [showSuccess, setShowSuccess] = useState(false)
 
-  const steps = ['From', 'To', 'Products', 'Quantities', 'Review']
+  const steps = ['From', 'To', 'Category', 'Products', 'Quantities', 'Review']
   const progress = ((step + 1) / steps.length) * 100
 
   const { data: locations = [] } = useQuery({
@@ -29,12 +33,15 @@ export function CreateTransferPage() {
 
   const mutation = useMutation({
     mutationFn: (data: any) => api.post('/transfers', data),
-    onSuccess: () => navigate('/transfers'),
+    onSuccess: () => {
+      setShowSuccess(true)
+      setTimeout(() => navigate('/transfers'), 1500)
+    },
   })
 
   const addItem = () => {
     if (!newName) return
-    setItems([...items, { product_name: newName, category: '', quantity: 1, unit: 'kg' }])
+    setItems([...items, { product_name: newName, category: selectedCategory, quantity: 1, unit: 'kg' }])
     setNewName('')
   }
 
@@ -77,7 +84,17 @@ export function CreateTransferPage() {
         {step === 1 && <LocationList selected={toLoc} onSelect={setToLoc} exclude={fromLoc?.id} />}
 
         {step === 2 && (
+          <CategorySelector selected={selectedCategory} onSelect={setSelectedCategory} />
+        )}
+
+        {step === 3 && (
           <div className="space-y-3">
+            {selectedCategory && (
+              <div className="bg-primary/5 rounded-[12px] px-4 py-2 mb-1">
+                <p className="text-xs text-gray">Category</p>
+                <p className="text-sm font-semibold text-primary">{selectedCategory}</p>
+              </div>
+            )}
             <div className="flex gap-2">
               <Input placeholder="Product name" value={newName} onChange={(e) => setNewName(e.target.value)} className="flex-1" />
               <Button size="sm" onClick={addItem} disabled={!newName}>Add</Button>
@@ -91,7 +108,7 @@ export function CreateTransferPage() {
           </div>
         )}
 
-        {step === 3 && (
+        {step === 4 && (
           <div className="space-y-3">
             {items.map((item, idx) => (
               <div key={idx} className="bg-bg rounded-[12px] p-3">
@@ -111,11 +128,12 @@ export function CreateTransferPage() {
           </div>
         )}
 
-        {step === 4 && (
+        {step === 5 && (
           <div className="space-y-3">
             <div className="bg-bg rounded-[12px] p-4 space-y-2">
               <div className="flex justify-between text-sm"><span className="text-gray">From</span><span className="font-semibold text-dark">{fromLoc?.name}</span></div>
               <div className="flex justify-between text-sm"><span className="text-gray">To</span><span className="font-semibold text-dark">{toLoc?.name}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-gray">Category</span><span className="font-semibold text-dark">{selectedCategory}</span></div>
               <div className="flex justify-between text-sm"><span className="text-gray">Items</span><span className="font-semibold text-dark">{items.length}</span></div>
             </div>
             {items.map((item, idx) => (
@@ -130,9 +148,9 @@ export function CreateTransferPage() {
 
       <div className="px-4 pb-8 flex gap-3">
         {step > 0 && <Button variant="secondary" fullWidth onClick={() => setStep(step - 1)}>Back</Button>}
-        {step < 4 ? (
+        {step < 5 ? (
           <Button fullWidth onClick={() => setStep(step + 1)}
-            disabled={(step === 0 && !fromLoc) || (step === 1 && !toLoc) || (step === 2 && items.length === 0)}>
+            disabled={(step === 0 && !fromLoc) || (step === 1 && !toLoc) || (step === 2 && !selectedCategory) || (step === 3 && items.length === 0)}>
             Next
           </Button>
         ) : (
@@ -142,6 +160,13 @@ export function CreateTransferPage() {
           </Button>
         )}
       </div>
+
+      <Snackbar
+        isOpen={showSuccess}
+        onClose={() => setShowSuccess(false)}
+        message="Transfer created successfully"
+        type="success"
+      />
     </div>
   )
 }

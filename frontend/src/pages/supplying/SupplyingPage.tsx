@@ -1,13 +1,20 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { CardSkeleton } from '@/components/ui/skeleton'
 import { Header } from '@/components/layout/Header'
 import { Tabbar } from '@/components/layout/Tabbar'
 import { BottomSheet } from '@/components/layout/BottomSheet'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Plus, Clock, CheckCircle, XCircle } from 'lucide-react'
+import { Snackbar } from '@/components/ui/snackbar'
+import { useUnreadNotificationCount } from '@/hooks/useApi'
+import { useAuthStore } from '@/stores/auth'
+import { Plus, Clock, CheckCircle, XCircle, Truck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
+import { useCurrency } from '@/stores/app'
+
+type Tab = 'requests' | 'history'
 
 const statusIcon = {
   pending: Clock,
@@ -22,14 +29,23 @@ const statusColor = {
 
 export function SupplyingPage() {
   const queryClient = useQueryClient()
+  const cs = useCurrency()
+  const { user } = useAuthStore()
+  const isOwner = user?.role === 'owner'
+  const { data: unreadCount = 0 } = useUnreadNotificationCount()
+  const [tab, setTab] = useState<Tab>('requests')
   const [showCreate, setShowCreate] = useState(false)
   const [supplierName, setSupplierName] = useState('')
   const [items, setItems] = useState([{ product_name: '', quantity: '', unit: 'kg', price_per_unit: '', category: '' }])
+  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; type: 'success' | 'error' }>({ open: false, message: '', type: 'success' })
 
-  const { data: requests = [] } = useQuery({
+  const { data: requests = [], isLoading } = useQuery({
     queryKey: ['supply-requests'],
     queryFn: () => api.get('/supplying').then((r) => r.data),
   })
+
+  const pendingRequests = requests.filter((r: any) => r.status === 'pending')
+  const historyRequests = requests.filter((r: any) => r.status !== 'pending')
 
   const createMutation = useMutation({
     mutationFn: (data: any) => api.post('/supplying', data),
@@ -38,6 +54,29 @@ export function SupplyingPage() {
       setShowCreate(false)
       setSupplierName('')
       setItems([{ product_name: '', quantity: '', unit: 'kg', price_per_unit: '', category: '' }])
+      setSnackbar({ open: true, message: 'Supply request created', type: 'success' })
+    },
+  })
+
+  const approveMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/supplying/${id}/approve`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['supply-requests'] })
+      setSnackbar({ open: true, message: 'Request approved', type: 'success' })
+    },
+    onError: () => {
+      setSnackbar({ open: true, message: 'Failed to approve', type: 'error' })
+    },
+  })
+
+  const rejectMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/supplying/${id}/reject`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['supply-requests'] })
+      setSnackbar({ open: true, message: 'Request rejected', type: 'success' })
+    },
+    onError: () => {
+      setSnackbar({ open: true, message: 'Failed to reject', type: 'error' })
     },
   })
 
@@ -57,19 +96,49 @@ export function SupplyingPage() {
     createMutation.mutate({ supplier_name: supplierName, location_id: '', items: parsed })
   }
 
+  const displayedRequests = tab === 'requests' ? pendingRequests : historyRequests
+
   return (
     <div className="flex flex-col min-h-dvh bg-bg">
-      <Header title="Supplying" showBack showNotification />
+      <Header title="Supplying" showBack showNotification badgeCount={unreadCount} />
 
-      <div className="px-4 pt-3 pb-3 flex items-center justify-between">
-        <span className="text-xs text-gray">{requests.length} requests</span>
-        <button onClick={() => setShowCreate(true)} className="flex items-center gap-1 text-sm font-medium text-primary">
-          <Plus className="h-4 w-4" /> New Request
-        </button>
+      {/* Segmented Control */}
+      <div className="px-4 pt-2 pb-3">
+        <div className="flex bg-bg-alt rounded-[12px] p-1">
+          {(['requests', 'history'] as Tab[]).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={cn(
+                'flex-1 py-2 text-sm font-medium rounded-[10px] transition-colors capitalize',
+                tab === t ? 'bg-white text-dark shadow-sm' : 'text-gray'
+              )}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="px-4 pb-3 flex items-center justify-between">
+        <span className="text-xs text-gray">{displayedRequests.length} {tab === 'requests' ? 'pending' : 'completed'}</span>
+        {tab === 'requests' && (
+          <button onClick={() => setShowCreate(true)} className="flex items-center gap-1 text-sm font-medium text-primary">
+            <Plus className="h-4 w-4" /> New Request
+          </button>
+        )}
       </div>
 
       <main className="flex-1 px-4 pb-20 space-y-2">
-        {requests.map((req: any) => {
+        {isLoading ? (
+          <>
+            <CardSkeleton />
+            <CardSkeleton />
+            <CardSkeleton />
+          </>
+        ) : (
+        <>
+        {displayedRequests.map((req: any) => {
           const Icon = statusIcon[req.status as keyof typeof statusIcon] || Clock
           const color = statusColor[req.status as keyof typeof statusColor] || statusColor.pending
           return (
@@ -80,20 +149,44 @@ export function SupplyingPage() {
                   <p className="text-xs text-gray mt-0.5">{new Date(req.created_at).toLocaleDateString()}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <p className="text-sm font-semibold text-dark">€{req.total_sum.toFixed(2)}</p>
+                  <p className="text-sm font-semibold text-dark">{req.total_sum.toFixed(2)}{cs}</p>
                   <span className={cn('flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium', color)}>
                     <Icon className="h-3 w-3" /> {req.status}
                   </span>
                 </div>
               </div>
+              {tab === 'requests' && isOwner && (
+                <div className="flex gap-2 mt-3">
+                  <Button
+                    variant="secondary"
+                    fullWidth
+                    onClick={() => rejectMutation.mutate(req.id)}
+                    disabled={rejectMutation.isPending}
+                  >
+                    <XCircle className="h-4 w-4 mr-1" /> Reject
+                  </Button>
+                  <Button
+                    fullWidth
+                    onClick={() => approveMutation.mutate(req.id)}
+                    disabled={approveMutation.isPending}
+                  >
+                    <CheckCircle className="h-4 w-4 mr-1" /> Approve
+                  </Button>
+                </div>
+              )}
             </div>
           )
         })}
 
-        {requests.length === 0 && (
+        {displayedRequests.length === 0 && (
           <div className="text-center py-12">
-            <p className="text-sm text-gray">No supply requests yet</p>
+            <Truck className="h-12 w-12 text-gray-light mx-auto mb-3" />
+            <p className="text-sm text-gray">
+              {tab === 'requests' ? 'No pending requests' : 'No history yet'}
+            </p>
           </div>
+        )}
+        </>
         )}
       </main>
 
@@ -122,6 +215,13 @@ export function SupplyingPage() {
           </Button>
         </div>
       </BottomSheet>
+
+      <Snackbar
+        message={snackbar.message}
+        type={snackbar.type}
+        isOpen={snackbar.open}
+        onClose={() => setSnackbar((s) => ({ ...s, open: false }))}
+      />
     </div>
   )
 }

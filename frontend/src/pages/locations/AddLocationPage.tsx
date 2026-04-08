@@ -61,6 +61,10 @@ export function AddLocationPage() {
           onChange={(e) => setIikoOrgId(e.target.value)}
         />
         <p className="text-xs text-gray">You can find the Organization ID in your iiko Cloud admin panel under Settings → API.</p>
+
+        {mutation.isError && (
+          <p className="text-sm text-danger text-center">Failed to add location. Please try again.</p>
+        )}
       </div>
 
       <div className="px-4 pb-8 pt-4">

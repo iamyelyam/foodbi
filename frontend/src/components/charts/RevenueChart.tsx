@@ -1,4 +1,5 @@
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { useCurrency } from '@/stores/app'
 
 interface DataPoint {
   date: string
@@ -12,6 +13,7 @@ interface RevenueChartProps {
 }
 
 export function RevenueChart({ data, height = 200 }: RevenueChartProps) {
+  const cs = useCurrency()
   const formatted = data.map((d) => ({
     ...d,
     label: new Date(d.date).toLocaleDateString('en', { month: 'short', day: 'numeric' }),
@@ -31,7 +33,7 @@ export function RevenueChart({ data, height = 200 }: RevenueChartProps) {
         <YAxis tick={{ fontSize: 10, fill: '#A4A2B7' }} />
         <Tooltip
           contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-          formatter={(value) => [`€${Number(value).toFixed(2)}`, 'Revenue']}
+          formatter={(value) => [`${Number(value).toFixed(2)}${cs}`, 'Revenue']}
         />
         <Area type="monotone" dataKey="revenue" stroke="#6ADEBF" fill="url(#revGradient)" strokeWidth={2} />
       </AreaChart>

@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { CardSkeleton } from '@/components/ui/skeleton'
 import { Header } from '@/components/layout/Header'
 import { Tabbar } from '@/components/layout/Tabbar'
 import { BottomSheet } from '@/components/layout/BottomSheet'
@@ -7,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Sparkles, TrendingUp, DollarSign, ShoppingCart, Plus, CheckSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useUnreadNotificationCount } from '@/hooks/useApi'
 import api from '@/lib/api'
 
 const typeConfig: Record<string, { icon: typeof Sparkles; color: string }> = {
@@ -22,12 +25,14 @@ const impactBadge: Record<string, string> = {
 }
 
 export function AISuggestionsPage() {
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [selectedSuggestion, setSelectedSuggestion] = useState<any>(null)
   const [taskTitle, setTaskTitle] = useState('')
   const [showTasks, setShowTasks] = useState(false)
 
-  const { data: suggestions = [] } = useQuery({
+  const { data: unreadCount = 0 } = useUnreadNotificationCount()
+  const { data: suggestions = [], isLoading } = useQuery({
     queryKey: ['ai-suggestions'],
     queryFn: () => api.get('/ai/suggestions').then((r) => r.data),
   })
@@ -53,7 +58,7 @@ export function AISuggestionsPage() {
 
   return (
     <div className="flex flex-col min-h-dvh bg-bg">
-      <Header title="AI Suggestions" showBack showNotification />
+      <Header title="AI Suggestions" showBack showNotification badgeCount={unreadCount} />
 
       <div className="px-4 pt-3 pb-3 flex items-center justify-between">
         <span className="text-xs text-gray">{suggestions.length} suggestions</span>
@@ -63,13 +68,21 @@ export function AISuggestionsPage() {
       </div>
 
       <main className="flex-1 px-4 pb-20 space-y-3">
+        {isLoading ? (
+          <>
+            <CardSkeleton />
+            <CardSkeleton />
+            <CardSkeleton />
+          </>
+        ) : (
+        <>
         {suggestions.map((s: any) => {
           const config = typeConfig[s.type] || { icon: Sparkles, color: 'text-primary bg-primary-lighter' }
           const Icon = config.icon
           return (
             <button
               key={s.id}
-              onClick={() => { setSelectedSuggestion(s); setTaskTitle(s.title) }}
+              onClick={() => navigate(`/ai-suggestions/${s.id}`)}
               className="w-full bg-white rounded-[16px] p-4 shadow-sm text-left"
             >
               <div className="flex items-start gap-3">
@@ -95,6 +108,8 @@ export function AISuggestionsPage() {
             <Sparkles className="h-12 w-12 text-gray-light mx-auto mb-3" />
             <p className="text-sm text-gray">No suggestions yet. Sync more data with iiko.</p>
           </div>
+        )}
+        </>
         )}
       </main>
 

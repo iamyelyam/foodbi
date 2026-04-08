@@ -1,24 +1,32 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { CardSkeleton } from '@/components/ui/skeleton'
 import { Header } from '@/components/layout/Header'
 import { Tabbar } from '@/components/layout/Tabbar'
 import { BottomSheet } from '@/components/layout/BottomSheet'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Plus, ArrowRightLeft, Filter } from 'lucide-react'
+import { useUnreadNotificationCount } from '@/hooks/useApi'
+import { useAuthStore } from '@/stores/auth'
+import { Snackbar } from '@/components/ui/snackbar'
+import { Plus, ArrowRightLeft, Filter, CheckCircle, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
 
 export function TransfersPage() {
   const queryClient = useQueryClient()
+  const { user } = useAuthStore()
+  const isOwner = user?.role === 'owner'
+  const { data: unreadCount = 0 } = useUnreadNotificationCount()
   const [showCreate, setShowCreate] = useState(false)
+  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; type: 'success' | 'error' }>({ open: false, message: '', type: 'success' })
   const [showFilters, setShowFilters] = useState(false)
   const [filters, setFilters] = useState<Record<string, string>>({})
   const [fromLoc, setFromLoc] = useState('')
   const [toLoc, setToLoc] = useState('')
   const [items, setItems] = useState([{ product_name: '', quantity: '', unit: 'kg', category: '' }])
 
-  const { data: transfers = [] } = useQuery({
+  const { data: transfers = [], isLoading } = useQuery({
     queryKey: ['transfers', filters],
     queryFn: () => api.get('/transfers', { params: filters }).then((r) => r.data),
   })
@@ -36,6 +44,28 @@ export function TransfersPage() {
       setFromLoc('')
       setToLoc('')
       setItems([{ product_name: '', quantity: '', unit: 'kg', category: '' }])
+    },
+  })
+
+  const completeMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/transfers/${id}/complete`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transfers'] })
+      setSnackbar({ open: true, message: 'Transfer completed', type: 'success' })
+    },
+    onError: () => {
+      setSnackbar({ open: true, message: 'Failed to complete transfer', type: 'error' })
+    },
+  })
+
+  const cancelMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/transfers/${id}/cancel`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transfers'] })
+      setSnackbar({ open: true, message: 'Transfer cancelled', type: 'success' })
+    },
+    onError: () => {
+      setSnackbar({ open: true, message: 'Failed to cancel transfer', type: 'error' })
     },
   })
 
@@ -59,7 +89,7 @@ export function TransfersPage() {
 
   return (
     <div className="flex flex-col min-h-dvh bg-bg">
-      <Header title="Transfers" showBack showNotification />
+      <Header title="Transfers" showBack showNotification badgeCount={unreadCount} />
 
       <div className="px-4 pt-3 pb-3 flex items-center justify-between">
         <span className="text-xs text-gray">{transfers.length} transfers</span>
@@ -74,6 +104,14 @@ export function TransfersPage() {
       </div>
 
       <main className="flex-1 px-4 pb-20 space-y-2">
+        {isLoading ? (
+          <>
+            <CardSkeleton />
+            <CardSkeleton />
+            <CardSkeleton />
+          </>
+        ) : (
+        <>
         {transfers.map((t: any) => (
           <div key={t.id} className="bg-white rounded-[12px] p-4 shadow-sm">
             <div className="flex items-center justify-between">
@@ -96,6 +134,25 @@ export function TransfersPage() {
                 {t.status}
               </span>
             </div>
+            {t.status === 'pending' && isOwner && (
+              <div className="flex gap-2 mt-3">
+                <Button
+                  variant="secondary"
+                  fullWidth
+                  onClick={() => cancelMutation.mutate(t.id)}
+                  disabled={cancelMutation.isPending}
+                >
+                  <XCircle className="h-4 w-4 mr-1" /> Cancel
+                </Button>
+                <Button
+                  fullWidth
+                  onClick={() => completeMutation.mutate(t.id)}
+                  disabled={completeMutation.isPending}
+                >
+                  <CheckCircle className="h-4 w-4 mr-1" /> Complete
+                </Button>
+              </div>
+            )}
           </div>
         ))}
 
@@ -104,6 +161,8 @@ export function TransfersPage() {
             <ArrowRightLeft className="h-12 w-12 text-gray-light mx-auto mb-3" />
             <p className="text-sm text-gray">No transfers yet</p>
           </div>
+        )}
+        </>
         )}
       </main>
 
@@ -167,6 +226,13 @@ export function TransfersPage() {
           </div>
         </div>
       </BottomSheet>
+
+      <Snackbar
+        message={snackbar.message}
+        type={snackbar.type}
+        isOpen={snackbar.open}
+        onClose={() => setSnackbar((s) => ({ ...s, open: false }))}
+      />
     </div>
   )
 }

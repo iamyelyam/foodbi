@@ -6,30 +6,40 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ProgressBar } from '@/components/ui/progress-bar'
 import { SearchBar } from '@/components/ui/search-bar'
+import { Snackbar } from '@/components/ui/snackbar'
+import { CategorySelector } from '@/components/CategorySelector'
 import { Minus, Plus } from 'lucide-react'
 import api from '@/lib/api'
+import { useAppStore, useCurrency } from '@/stores/app'
 
 interface Item { product_name: string; category: string; quantity: number; unit: string; price_per_unit: number }
 
 export function CreateSupplyPage() {
   const navigate = useNavigate()
+  const cs = useCurrency()
+  const activeLocationId = useAppStore((s) => s.activeLocationId)
   const [step, setStep] = useState(0)
   const [supplier, setSupplier] = useState('')
+  const [selectedCategory, setSelectedCategory] = useState('')
   const [search, setSearch] = useState('')
   const [items, setItems] = useState<Item[]>([])
   const [newItem, setNewItem] = useState({ product_name: '', category: '', unit: 'kg', price_per_unit: 0 })
+  const [showSuccess, setShowSuccess] = useState(false)
 
-  const steps = ['Supplier', 'Add Products', 'Quantities', 'Review']
+  const steps = ['Supplier', 'Category', 'Add Products', 'Quantities', 'Review']
   const progress = ((step + 1) / steps.length) * 100
 
   const mutation = useMutation({
     mutationFn: (data: any) => api.post('/supplying', data),
-    onSuccess: () => navigate('/supplying'),
+    onSuccess: () => {
+      setShowSuccess(true)
+      setTimeout(() => navigate('/supplying'), 1500)
+    },
   })
 
   const addItem = () => {
     if (!newItem.product_name) return
-    setItems([...items, { ...newItem, quantity: 1 }])
+    setItems([...items, { ...newItem, category: selectedCategory, quantity: 1 }])
     setNewItem({ product_name: '', category: '', unit: 'kg', price_per_unit: 0 })
   }
 
@@ -50,7 +60,7 @@ export function CreateSupplyPage() {
   const total = items.reduce((s, i) => s + i.quantity * i.price_per_unit, 0)
 
   const handleSubmit = () => {
-    mutation.mutate({ supplier_name: supplier, location_id: '', items })
+    mutation.mutate({ supplier_name: supplier, location_id: activeLocationId, items })
   }
 
   return (
@@ -69,12 +79,22 @@ export function CreateSupplyPage() {
         )}
 
         {step === 1 && (
+          <CategorySelector selected={selectedCategory} onSelect={setSelectedCategory} />
+        )}
+
+        {step === 2 && (
           <div className="space-y-3">
+            {selectedCategory && (
+              <div className="bg-primary/5 rounded-[12px] px-4 py-2 mb-1">
+                <p className="text-xs text-gray">Category</p>
+                <p className="text-sm font-semibold text-primary">{selectedCategory}</p>
+              </div>
+            )}
             <SearchBar placeholder="Search products..." value={search} onChange={(e) => setSearch(e.target.value)} onClear={() => setSearch('')} />
             <div className="bg-bg rounded-[12px] p-3 space-y-3">
               <Input placeholder="Product name" value={newItem.product_name} onChange={(e) => setNewItem({ ...newItem, product_name: e.target.value })} />
               <div className="grid grid-cols-2 gap-2">
-                <Input placeholder="Category" value={newItem.category} onChange={(e) => setNewItem({ ...newItem, category: e.target.value })} />
+                <Input placeholder="Category" value={selectedCategory} disabled />
                 <Input placeholder="Unit" value={newItem.unit} onChange={(e) => setNewItem({ ...newItem, unit: e.target.value })} />
               </div>
               <Button size="sm" onClick={addItem} disabled={!newItem.product_name}>Add Product</Button>
@@ -88,7 +108,7 @@ export function CreateSupplyPage() {
           </div>
         )}
 
-        {step === 2 && (
+        {step === 3 && (
           <div className="space-y-3">
             {items.map((item, idx) => (
               <div key={idx} className="bg-bg rounded-[12px] p-3">
@@ -113,7 +133,7 @@ export function CreateSupplyPage() {
           </div>
         )}
 
-        {step === 3 && (
+        {step === 4 && (
           <div className="space-y-3">
             <div className="bg-bg rounded-[12px] p-4">
               <p className="text-sm text-gray">Supplier</p>
@@ -125,12 +145,12 @@ export function CreateSupplyPage() {
                   <p className="text-sm font-medium text-dark">{item.product_name}</p>
                   <p className="text-xs text-gray">{item.quantity} {item.unit}</p>
                 </div>
-                <p className="text-sm font-semibold text-dark">€{(item.quantity * item.price_per_unit).toFixed(2)}</p>
+                <p className="text-sm font-semibold text-dark">{(item.quantity * item.price_per_unit).toFixed(2)}{cs}</p>
               </div>
             ))}
             <div className="flex items-center justify-between bg-primary/5 rounded-[12px] px-4 py-3">
               <span className="text-sm font-semibold text-dark">Total</span>
-              <span className="text-lg font-bold text-primary">€{total.toFixed(2)}</span>
+              <span className="text-lg font-bold text-primary">{total.toFixed(2)}{cs}</span>
             </div>
           </div>
         )}
@@ -138,9 +158,9 @@ export function CreateSupplyPage() {
 
       <div className="px-4 pb-8 flex gap-3">
         {step > 0 && <Button variant="secondary" fullWidth onClick={() => setStep(step - 1)}>Back</Button>}
-        {step < 3 ? (
+        {step < 4 ? (
           <Button fullWidth onClick={() => setStep(step + 1)}
-            disabled={(step === 0 && !supplier) || (step === 1 && items.length === 0)}>
+            disabled={(step === 0 && !supplier) || (step === 1 && !selectedCategory) || (step === 2 && items.length === 0)}>
             Next
           </Button>
         ) : (
@@ -149,6 +169,13 @@ export function CreateSupplyPage() {
           </Button>
         )}
       </div>
+
+      <Snackbar
+        isOpen={showSuccess}
+        onClose={() => setShowSuccess(false)}
+        message="Supply request created successfully"
+        type="success"
+      />
     </div>
   )
 }

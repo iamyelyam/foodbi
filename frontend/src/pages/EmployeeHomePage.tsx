@@ -2,11 +2,14 @@ import { Header } from '@/components/layout/Header'
 import { Tabbar } from '@/components/layout/Tabbar'
 import { CardSkeleton } from '@/components/ui/skeleton'
 import { RevenueChart } from '@/components/charts/RevenueChart'
-import { useDashboard, useRevenueTrend } from '@/hooks/useApi'
+import { useDashboard, useRevenueTrend, useUnreadNotificationCount } from '@/hooks/useApi'
 import { TrendingUp, TrendingDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useCurrency } from '@/stores/app'
 
 export function EmployeeHomePage() {
+  const cs = useCurrency()
+  const { data: unreadCount = 0 } = useUnreadNotificationCount()
   const { data: summary, isLoading } = useDashboard()
   const { data: trend = [] } = useRevenueTrend(7)
 
@@ -15,7 +18,7 @@ export function EmployeeHomePage() {
 
   return (
     <div className="flex flex-col min-h-dvh bg-bg">
-      <Header title="FoodBI" showNotification />
+      <Header title="FoodBI" showNotification badgeCount={unreadCount} />
 
       <main className="flex-1 px-4 pt-4 pb-20 space-y-3">
         {isLoading ? (
@@ -27,7 +30,7 @@ export function EmployeeHomePage() {
               <span className="text-xs text-primary font-medium bg-primary-lighter px-2 py-0.5 rounded-full">Today</span>
             </div>
             <p className="text-3xl font-bold text-dark">
-              €{(summary?.today_revenue ?? 0).toLocaleString('en', { minimumFractionDigits: 2 })}
+              {(summary?.today_revenue ?? 0).toLocaleString('en', { minimumFractionDigits: 2 })}{cs}
             </p>
             <div className="flex items-center gap-1.5 mt-1">
               {isPositive ? <TrendingUp className="h-3.5 w-3.5 text-success" /> : <TrendingDown className="h-3.5 w-3.5 text-danger" />}

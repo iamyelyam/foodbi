@@ -1,19 +1,42 @@
-import { useParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import { Header } from '@/components/layout/Header'
 import { Tabbar } from '@/components/layout/Tabbar'
+import { Button } from '@/components/ui/button'
+import { Modal } from '@/components/ui/modal'
+import { Snackbar } from '@/components/ui/snackbar'
 import { ListItemSkeleton } from '@/components/ui/skeleton'
+import { useAuthStore } from '@/stores/auth'
 import { User, Mail, Phone, Shield, MapPin } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
 
 export function EmployeeDetailPage() {
   const { id } = useParams()
+  const navigate = useNavigate()
+  const { user } = useAuthStore()
+  const isOwner = user?.role === 'owner'
+  const [showDeactivate, setShowDeactivate] = useState(false)
+  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; type: 'success' | 'error' }>({ open: false, message: '', type: 'success' })
 
   const { data: emp, isLoading } = useQuery({
     queryKey: ['employee', id],
     queryFn: () => api.get(`/employees/${id}`).then((r) => r.data),
     enabled: !!id,
+  })
+
+  const deactivateMutation = useMutation({
+    mutationFn: () => api.post(`/employees/${id}/deactivate`),
+    onSuccess: () => {
+      setShowDeactivate(false)
+      setSnackbar({ open: true, message: 'Employee deactivated', type: 'success' })
+      setTimeout(() => navigate('/employees'), 1500)
+    },
+    onError: () => {
+      setShowDeactivate(false)
+      setSnackbar({ open: true, message: 'Failed to deactivate', type: 'error' })
+    },
   })
 
   return (
@@ -62,12 +85,37 @@ export function EmployeeDetailPage() {
                 </div>
               </div>
             )}
+
+            {isOwner && emp.is_active && emp.role !== 'owner' && (
+              <Button variant="danger" fullWidth onClick={() => setShowDeactivate(true)}>
+                Deactivate Employee
+              </Button>
+            )}
           </>
         ) : (
           <p className="text-center text-sm text-gray py-12">Employee not found</p>
         )}
       </main>
       <Tabbar />
+
+      <Modal isOpen={showDeactivate} onClose={() => setShowDeactivate(false)} title="Deactivate Employee">
+        <p className="text-sm text-gray mb-4">
+          Are you sure you want to deactivate {emp?.first_name} {emp?.last_name}?
+        </p>
+        <div className="flex gap-3">
+          <Button variant="secondary" fullWidth onClick={() => setShowDeactivate(false)}>Cancel</Button>
+          <Button variant="danger" fullWidth onClick={() => deactivateMutation.mutate()} disabled={deactivateMutation.isPending}>
+            {deactivateMutation.isPending ? 'Deactivating...' : 'Deactivate'}
+          </Button>
+        </div>
+      </Modal>
+
+      <Snackbar
+        message={snackbar.message}
+        type={snackbar.type}
+        isOpen={snackbar.open}
+        onClose={() => setSnackbar((s) => ({ ...s, open: false }))}
+      />
     </div>
   )
 }

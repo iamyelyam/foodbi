@@ -1,16 +1,19 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { CardSkeleton } from '@/components/ui/skeleton'
 import { Header } from '@/components/layout/Header'
 import { Tabbar } from '@/components/layout/Tabbar'
 import { BottomSheet } from '@/components/layout/BottomSheet'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { FilterChip } from '@/components/ui/filter-chip'
+import { useUnreadNotificationCount } from '@/hooks/useApi'
 import { ArrowRightLeft, Filter, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
 
 export function HistoryPage() {
+  const { data: unreadCount = 0 } = useUnreadNotificationCount()
   const [showFilters, setShowFilters] = useState(false)
   const [filters, setFilters] = useState<Record<string, string>>({})
 
@@ -19,7 +22,7 @@ export function HistoryPage() {
     queryFn: () => api.get('/locations').then((r) => r.data),
   })
 
-  const { data: transfers = [] } = useQuery({
+  const { data: transfers = [], isLoading } = useQuery({
     queryKey: ['transfer-history', filters],
     queryFn: () => api.get('/transfers', { params: { ...filters, status: 'completed' } }).then((r) => r.data),
   })
@@ -30,7 +33,7 @@ export function HistoryPage() {
 
   return (
     <div className="flex flex-col min-h-dvh bg-bg">
-      <Header title="Transfer History" showBack showNotification />
+      <Header title="Transfer History" showBack showNotification badgeCount={unreadCount} />
 
       <div className="px-4 pt-3 pb-2 flex items-center justify-between">
         <div className="flex items-center gap-2 flex-wrap">
@@ -45,6 +48,14 @@ export function HistoryPage() {
       </div>
 
       <main className="flex-1 px-4 pb-20 space-y-2">
+        {isLoading ? (
+          <>
+            <CardSkeleton />
+            <CardSkeleton />
+            <CardSkeleton />
+          </>
+        ) : (
+        <>
         {transfers.map((t: any) => (
           <div key={t.id} className="bg-white rounded-[12px] p-4 shadow-sm">
             <div className="flex items-center justify-between">
@@ -72,6 +83,8 @@ export function HistoryPage() {
 
         {transfers.length === 0 && (
           <EmptyState icon={ArrowRightLeft} title="No transfer history" description="Completed transfers will appear here" />
+        )}
+        </>
         )}
       </main>
 

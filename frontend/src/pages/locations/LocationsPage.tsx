@@ -1,10 +1,13 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { CardSkeleton } from '@/components/ui/skeleton'
 import { Header } from '@/components/layout/Header'
 import { Tabbar } from '@/components/layout/Tabbar'
 import { BottomSheet } from '@/components/layout/BottomSheet'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { useUnreadNotificationCount } from '@/hooks/useApi'
+import { Snackbar } from '@/components/ui/snackbar'
 import { MapPin, Plus, RefreshCw, Check } from 'lucide-react'
 import { useAppStore } from '@/stores/app'
 import api from '@/lib/api'
@@ -27,13 +30,15 @@ interface SyncStatus {
 
 export function LocationsPage() {
   const queryClient = useQueryClient()
+  const { data: unreadCount = 0 } = useUnreadNotificationCount()
   const { activeLocationId, setActiveLocation } = useAppStore()
   const [showAdd, setShowAdd] = useState(false)
+  const [showSyncSuccess, setShowSyncSuccess] = useState(false)
   const [name, setName] = useState('')
   const [address, setAddress] = useState('')
   const [iikoOrgId, setIikoOrgId] = useState('')
 
-  const { data: locations = [] } = useQuery<Location[]>({
+  const { data: locations = [], isLoading } = useQuery<Location[]>({
     queryKey: ['locations'],
     queryFn: () => api.get('/locations').then(r => r.data),
   })
@@ -56,6 +61,14 @@ export function LocationsPage() {
     },
   })
 
+  const syncMutation = useMutation({
+    mutationFn: (locId: string) => api.post(`/locations/${locId}/sync`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sync-status'] })
+      setShowSyncSuccess(true)
+    },
+  })
+
   const getLastSync = (locationId: string) => {
     const entries = syncStatus.filter(s => s.location_id === locationId && s.status === 'success')
     if (entries.length === 0) return null
@@ -64,7 +77,7 @@ export function LocationsPage() {
 
   return (
     <div className="flex flex-col min-h-dvh bg-bg">
-      <Header title="Locations" showBack showNotification />
+      <Header title="Locations" showBack showNotification badgeCount={unreadCount} />
 
       <main className="flex-1 px-4 pt-4 pb-20">
         <div className="flex items-center justify-between mb-4">
@@ -79,6 +92,12 @@ export function LocationsPage() {
           </button>
         </div>
 
+        {isLoading ? (
+          <div className="flex flex-col gap-3">
+            <CardSkeleton />
+            <CardSkeleton />
+          </div>
+        ) : (
         <div className="flex flex-col gap-3">
           {locations.map((loc) => {
             const isActive = activeLocationId === loc.id
@@ -109,14 +128,23 @@ export function LocationsPage() {
                   {isActive && <Check className="h-5 w-5 text-primary" />}
                 </div>
 
-                {lastSync && (
-                  <div className="mt-3 flex items-center gap-1.5 text-xs text-gray">
-                    <RefreshCw className="h-3 w-3" />
-                    <span>
-                      Last sync: {new Date(lastSync.started_at).toLocaleTimeString()} ({lastSync.records_synced} records)
-                    </span>
-                  </div>
-                )}
+                <div className="mt-3 flex items-center justify-between">
+                  {lastSync ? (
+                    <div className="flex items-center gap-1.5 text-xs text-gray">
+                      <RefreshCw className="h-3 w-3" />
+                      <span>Last sync: {new Date(lastSync.started_at).toLocaleTimeString()}</span>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-gray">Not synced yet</span>
+                  )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); syncMutation.mutate(loc.id) }}
+                    disabled={syncMutation.isPending}
+                    className="text-xs font-medium text-primary bg-primary-lighter px-3 py-1 rounded-full"
+                  >
+                    {syncMutation.isPending ? 'Syncing...' : 'Sync Now'}
+                  </button>
+                </div>
               </button>
             )
           })}
@@ -131,6 +159,7 @@ export function LocationsPage() {
             </div>
           )}
         </div>
+        )}
       </main>
 
       <Tabbar />
@@ -164,6 +193,13 @@ export function LocationsPage() {
           </Button>
         </div>
       </BottomSheet>
+
+      <Snackbar
+        isOpen={showSyncSuccess}
+        onClose={() => setShowSyncSuccess(false)}
+        message="Sync queued successfully"
+        type="success"
+      />
     </div>
   )
 }

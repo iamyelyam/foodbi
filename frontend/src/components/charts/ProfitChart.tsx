@@ -1,4 +1,5 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
+import { useCurrency } from '@/stores/app'
 
 interface DataPoint {
   date: string
@@ -13,6 +14,7 @@ interface ProfitChartProps {
 }
 
 export function ProfitChart({ data, height = 200 }: ProfitChartProps) {
+  const cs = useCurrency()
   const formatted = data.map((d) => ({
     ...d,
     label: new Date(d.date).toLocaleDateString('en', { month: 'short', day: 'numeric' }),
@@ -26,7 +28,7 @@ export function ProfitChart({ data, height = 200 }: ProfitChartProps) {
         <YAxis tick={{ fontSize: 10, fill: '#A4A2B7' }} />
         <Tooltip
           contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-          formatter={(value) => `€${Number(value).toFixed(2)}`}
+          formatter={(value) => `${Number(value).toFixed(2)}${cs}`}
         />
         <Legend wrapperStyle={{ fontSize: 11 }} />
         <Bar dataKey="revenue" fill="#6ADEBF" radius={[4, 4, 0, 0]} name="Revenue" />
