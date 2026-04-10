@@ -103,10 +103,11 @@ func GetFloat(row map[string]interface{}, key string) float64 {
 
 // OrderAgg accumulates per-dish OLAP rows into per-order totals.
 type OrderAgg struct {
-	OrderDate string
-	Revenue   float64
-	Discount  float64
-	ItemCount int
+	OrderDate   string
+	OrderNumber string
+	Revenue     float64
+	Discount    float64
+	ItemCount   int
 }
 
 // AggregateOrdersFromOLAP takes per-dish OLAP rows and aggregates them into per-order totals.
@@ -121,7 +122,17 @@ func AggregateOrdersFromOLAP(rows []map[string]interface{}) map[string]*OrderAgg
 		}
 		agg, ok := orders[orderID]
 		if !ok {
-			agg = &OrderAgg{OrderDate: GetString(row, "OpenDate.Typed")}
+			orderNum := GetString(row, "OrderNum")
+			if orderNum == "" {
+				// iiko returns OrderNum as a number, not string
+				if n := GetFloat(row, "OrderNum"); n > 0 {
+					orderNum = fmt.Sprintf("%.0f", n)
+				}
+			}
+			agg = &OrderAgg{
+				OrderDate:   GetString(row, "OpenDate.Typed"),
+				OrderNumber: orderNum,
+			}
 			orders[orderID] = agg
 		}
 		agg.Revenue += GetFloat(row, "DishSumInt")
@@ -149,7 +160,7 @@ func (s *Service) SyncRevenue(ctx context.Context, client *iiko.Client, companyI
 	// iiko returns DishSumInt per-dish; we SUM them per order in Go.
 	report, err := client.GetOLAPReport(ctx, iiko.OLAPReportRequest{
 		ReportType:       "SALES",
-		GroupByRowFields: []string{"UniqOrderId.Id", "OpenDate.Typed", "DishName"},
+		GroupByRowFields: []string{"UniqOrderId.Id", "OrderNum", "OpenDate.Typed", "DishName"},
 		GroupByColFields: []string{},
 		AggregateFields:  []string{"DishDiscountSumInt", "DishSumInt", "DishAmountInt"},
 		Filters: map[string]interface{}{
@@ -167,10 +178,31 @@ func (s *Service) SyncRevenue(ctx context.Context, client *iiko.Client, companyI
 		return fmt.Errorf("fetch revenue report: %w", err)
 	}
 
+	// DEBUG: log first row to verify field names and values from iiko
+	if len(report.Data) > 0 {
+		first := report.Data[0]
+		log.Info().
+			Interface("first_row_keys", func() []string {
+				keys := make([]string, 0, len(first))
+				for k := range first {
+					keys = append(keys, k)
+				}
+				return keys
+			}()).
+			Interface("first_row_data", first).
+			Msg("sync: OLAP first row debug")
+	}
+
 	// Phase 1: aggregate per-dish rows into per-order totals
 	orders := AggregateOrdersFromOLAP(report.Data)
 
+	// Log aggregation stats for validation
+	var totalRev float64
+	for _, agg := range orders {
+		totalRev += agg.Revenue
+	}
 	log.Info().Int("olap_rows", len(report.Data)).Int("unique_orders", len(orders)).
+		Float64("total_revenue", totalRev).
 		Str("location", locationID.String()).Msg("sync: revenue aggregated per order")
 
 	// Phase 2: upsert aggregated order totals
@@ -182,12 +214,12 @@ func (s *Service) SyncRevenue(ctx context.Context, client *iiko.Client, companyI
 		}
 
 		_, err := s.db.Exec(ctx,
-			`INSERT INTO revenue_facts (company_id, location_id, iiko_order_id, order_date, revenue, discount, order_type, status, waiter_name, item_count, synced_at)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+			`INSERT INTO revenue_facts (company_id, location_id, iiko_order_id, order_number, order_date, revenue, discount, order_type, status, waiter_name, item_count, synced_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
 			 ON CONFLICT (company_id, iiko_order_id) DO UPDATE SET
 			   revenue = EXCLUDED.revenue, discount = EXCLUDED.discount, status = EXCLUDED.status,
-			   waiter_name = EXCLUDED.waiter_name, item_count = EXCLUDED.item_count, synced_at = NOW()`,
-			companyID, locationID, orderID, parsedDate, agg.Revenue, agg.Discount, "dine-in", "closed", "", agg.ItemCount)
+			   waiter_name = EXCLUDED.waiter_name, item_count = EXCLUDED.item_count, order_number = EXCLUDED.order_number, synced_at = NOW()`,
+			companyID, locationID, orderID, agg.OrderNumber, parsedDate, agg.Revenue, agg.Discount, "dine-in", "closed", "", agg.ItemCount)
 		if err != nil {
 			log.Warn().Err(err).Str("order_id", orderID).Msg("sync: failed to upsert revenue")
 			continue

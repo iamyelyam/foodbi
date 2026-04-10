@@ -1,0 +1,1 @@
+ALTER TABLE revenue_facts ADD COLUMN IF NOT EXISTS order_number VARCHAR(50);

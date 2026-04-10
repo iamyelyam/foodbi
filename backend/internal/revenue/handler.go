@@ -33,14 +33,15 @@ func (h *Handler) Routes() chi.Router {
 }
 
 type Order struct {
-	ID        string  `json:"id"`
-	OrderDate string  `json:"order_date"`
-	Revenue   float64 `json:"revenue"`
-	Discount  float64 `json:"discount"`
-	OrderType string  `json:"order_type"`
-	Status    string  `json:"status"`
-	ItemCount int     `json:"item_count"`
-	Waiter    string  `json:"waiter_name"`
+	ID          string  `json:"id"`
+	OrderNumber string  `json:"order_number"`
+	OrderDate   string  `json:"order_date"`
+	Revenue     float64 `json:"revenue"`
+	Discount    float64 `json:"discount"`
+	OrderType   string  `json:"order_type"`
+	Status      string  `json:"status"`
+	ItemCount   int     `json:"item_count"`
+	Waiter      string  `json:"waiter_name"`
 }
 
 type OrdersResponse struct {
@@ -64,7 +65,7 @@ func (h *Handler) ListOrders(w http.ResponseWriter, r *http.Request) {
 	perPage := 20
 	offset := (page - 1) * perPage
 
-	query := `SELECT id, order_date, revenue, discount, order_type, status, item_count, COALESCE(waiter_name, '')
+	query := `SELECT id, COALESCE(order_number, ''), order_date, revenue, discount, order_type, status, item_count, COALESCE(waiter_name, '')
 		FROM revenue_facts WHERE company_id = $1`
 	countQuery := `SELECT COUNT(*) FROM revenue_facts WHERE company_id = $1`
 	args := []interface{}{companyID}
@@ -112,7 +113,7 @@ func (h *Handler) ListOrders(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var o Order
 		var orderDate time.Time
-		if err := rows.Scan(&o.ID, &orderDate, &o.Revenue, &o.Discount, &o.OrderType, &o.Status, &o.ItemCount, &o.Waiter); err != nil {
+		if err := rows.Scan(&o.ID, &o.OrderNumber, &orderDate, &o.Revenue, &o.Discount, &o.OrderType, &o.Status, &o.ItemCount, &o.Waiter); err != nil {
 			continue
 		}
 		o.OrderDate = orderDate.Format(time.RFC3339)
@@ -138,9 +139,9 @@ func (h *Handler) GetOrder(w http.ResponseWriter, r *http.Request) {
 	var o Order
 	var orderDate time.Time
 	err := h.db.QueryRow(r.Context(),
-		`SELECT id, order_date, revenue, discount, order_type, status, item_count, COALESCE(waiter_name, '')
+		`SELECT id, COALESCE(order_number, ''), order_date, revenue, discount, order_type, status, item_count, COALESCE(waiter_name, '')
 		 FROM revenue_facts WHERE id = $1 AND company_id = $2`,
-		orderID, companyID).Scan(&o.ID, &orderDate, &o.Revenue, &o.Discount, &o.OrderType, &o.Status, &o.ItemCount, &o.Waiter)
+		orderID, companyID).Scan(&o.ID, &o.OrderNumber, &orderDate, &o.Revenue, &o.Discount, &o.OrderType, &o.Status, &o.ItemCount, &o.Waiter)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "order not found")
 		return
