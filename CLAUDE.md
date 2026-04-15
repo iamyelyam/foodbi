@@ -29,3 +29,25 @@
 - Frontend: React + TypeScript + Vite + TailwindCSS + Recharts
 - DB: PostgreSQL with RLS tenant isolation via `app.current_tenant`
 - Sync: iiko Server API (OLAP reports + REST endpoints)
+
+## Documentation Maintenance Protocol
+
+The project has full documentation under `docs/` (README, ARCHITECTURE, GETTING-STARTED, DEVELOPMENT, TESTING, CONFIGURATION, API, DEPLOYMENT). These docs are generated via `/gsd-docs-update` and verified against the live codebase.
+
+**After every commit that meaningfully changes user-visible behavior, infrastructure, or architecture, refresh affected docs:**
+
+| Change type | Docs to refresh |
+|---|---|
+| New API endpoint / handler / route | `docs/API.md` |
+| New migration / schema change | `docs/ARCHITECTURE.md` (Database section), `docs/API.md` if endpoints affected |
+| New env var / config setting | `docs/CONFIGURATION.md` |
+| New page or major UI flow | `docs/ARCHITECTURE.md` (Frontend section) |
+| Deploy infrastructure change | `docs/DEPLOYMENT.md` |
+| New dev command / workflow | `docs/DEVELOPMENT.md` |
+| New i18n locale | `docs/ARCHITECTURE.md` (i18n section) — use `/localize` skill |
+
+For broad refresh: run `/gsd-docs-update` (regenerates affected docs against live code). For verification only: `/gsd-docs-update --verify-only`.
+
+Trivial commits (typo fixes, single-string i18n adds, dependency bumps, refactors that preserve behavior) do NOT require doc updates.
+
+`CLAUDE.md` (this file) and `DEPLOY_TESTFLIGHT.md` are hand-written and intentionally preserved by the docs workflow.
