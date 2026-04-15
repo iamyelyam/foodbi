@@ -55,12 +55,22 @@ func (h *Handler) ListPurchases(w http.ResponseWriter, r *http.Request) {
 	supplierID := r.URL.Query().Get("supplier_id")
 	dateFrom := r.URL.Query().Get("date_from")
 	dateTo := r.URL.Query().Get("date_to")
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 {
-		page = 1
+	// Pagination: only applied when caller explicitly passes ?page=N.
+	// Without ?page, return all rows in the date filter window (front-end relies
+	// on this — it shows the full list within the picked date range, no paging).
+	pageParam := r.URL.Query().Get("page")
+	page := 0
+	perPage := 0
+	offset := 0
+	paginated := pageParam != ""
+	if paginated {
+		page, _ = strconv.Atoi(pageParam)
+		if page < 1 {
+			page = 1
+		}
+		perPage = 20
+		offset = (page - 1) * perPage
 	}
-	perPage := 20
-	offset := (page - 1) * perPage
 
 	query := `SELECT pf.id, COALESCE(pf.document_number,''), COALESCE(pf.supplier_id,''),
 		       COALESCE(NULLIF(sa.display_name, ''), pf.supplier_name, ''),
@@ -100,8 +110,11 @@ func (h *Handler) ListPurchases(w http.ResponseWriter, r *http.Request) {
 	var total int
 	h.db.QueryRow(r.Context(), countQuery, args...).Scan(&total)
 
-	query += ` ORDER BY pf.incoming_date DESC LIMIT $` + strconv.Itoa(argIdx) + ` OFFSET $` + strconv.Itoa(argIdx+1)
-	args = append(args, perPage, offset)
+	query += ` ORDER BY pf.incoming_date DESC`
+	if paginated {
+		query += ` LIMIT $` + strconv.Itoa(argIdx) + ` OFFSET $` + strconv.Itoa(argIdx+1)
+		args = append(args, perPage, offset)
+	}
 
 	rows, err := h.db.Query(r.Context(), query, args...)
 	if err != nil {
@@ -124,12 +137,22 @@ func (h *Handler) ListPurchases(w http.ResponseWriter, r *http.Request) {
 		purchases = []Purchase{}
 	}
 
+	respPerPage := perPage
+	respPage := page
+	respTotalPages := 1
+	if paginated && perPage > 0 {
+		respTotalPages = int(math.Ceil(float64(total) / float64(perPage)))
+	} else {
+		// Single-page response when no ?page=N requested.
+		respPerPage = total
+		respPage = 1
+	}
 	writeJSON(w, http.StatusOK, PurchasesResponse{
 		Purchases:  purchases,
 		Total:      total,
-		Page:       page,
-		PerPage:    perPage,
-		TotalPages: int(math.Ceil(float64(total) / float64(perPage))),
+		Page:       respPage,
+		PerPage:    respPerPage,
+		TotalPages: respTotalPages,
 	})
 }
 

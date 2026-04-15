@@ -232,6 +232,75 @@ func (c *Client) GetMeasureUnits(ctx context.Context) (map[string]string, error)
 	return nil, fmt.Errorf("no measure units endpoint matched")
 }
 
+// GetAssemblyChart fetches the technological card (recipe) for a single dish.
+// Endpoint: /resto/api/v2/assemblyCharts/getPrepared (the only working variant on
+// iiko Server v8+ for this restaurant; getRequired and others return 404).
+// Date is required by iiko (@NotNull) and must be plain YYYY-MM-DD (no time part).
+//
+// Returns the items of the currently active prepared chart, or nil if the dish has
+// no recipe defined (e.g. resold goods like beverages). Picks the chart whose
+// dateFrom <= today AND (dateTo == nil OR dateTo > today). If none match, returns nil.
+func (c *Client) GetAssemblyChart(ctx context.Context, dishID string) ([]RecipeComponent, error) {
+	if dishID == "" {
+		return nil, fmt.Errorf("dishID required")
+	}
+	today := time.Now().Format("2006-01-02")
+	params := url.Values{
+		"productId": {dishID},
+		"date":      {today},
+	}
+	data, err := c.doGet(ctx, "/resto/api/v2/assemblyCharts/getPrepared", params)
+	if err != nil {
+		return nil, fmt.Errorf("get assembly chart: %w", err)
+	}
+	var resp preparedChartResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode assembly chart: %w", err)
+	}
+	if len(resp.PreparedCharts) == 0 {
+		return nil, nil
+	}
+
+	// Pick the active chart (dateFrom <= today AND (dateTo nil OR > today)).
+	// iiko returns multiple historical revisions; the active one is unambiguous.
+	var active *struct {
+		AssembledProductID string `json:"assembledProductId"`
+		DateFrom           string `json:"dateFrom"`
+		DateTo             *string `json:"dateTo"`
+		Items              []struct {
+			ProductID string  `json:"productId"`
+			Amount    float64 `json:"amount"`
+		} `json:"items"`
+	}
+	for i := range resp.PreparedCharts {
+		ch := &resp.PreparedCharts[i]
+		from, _ := time.Parse("2006-01-02", ch.DateFrom)
+		if !from.IsZero() && from.After(time.Now()) {
+			continue
+		}
+		if ch.DateTo != nil && *ch.DateTo != "" {
+			to, _ := time.Parse("2006-01-02", *ch.DateTo)
+			if !to.IsZero() && !to.After(time.Now()) {
+				continue
+			}
+		}
+		active = ch
+		break
+	}
+	if active == nil {
+		return nil, nil
+	}
+
+	out := make([]RecipeComponent, 0, len(active.Items))
+	for _, it := range active.Items {
+		if it.ProductID == "" || it.Amount <= 0 {
+			continue
+		}
+		out = append(out, RecipeComponent{IngredientID: it.ProductID, Amount: it.Amount})
+	}
+	return out, nil
+}
+
 // GetSuppliers fetches supplier list from iiko Server API.
 // Tries multiple endpoints since different iiko Server versions expose suppliers differently.
 func (c *Client) GetSuppliers(ctx context.Context) (map[string]string, error) {

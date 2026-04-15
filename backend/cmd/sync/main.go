@@ -56,6 +56,12 @@ func main() {
 		runSync(ctx, syncService, "stock")
 	})
 
+	// Recipe (assembly chart) sync: every 6 hours.
+	// Recipes change rarely; one round-trip per dish (~58 dishes) keeps load low.
+	go runTicker(ctx, 6*time.Hour, "recipes", func() {
+		runSync(ctx, syncService, "recipes")
+	})
+
 	// Run initial sync immediately
 	go runSync(ctx, syncService, "all")
 
@@ -133,6 +139,12 @@ func runSync(ctx context.Context, svc *gosync.Service, syncType string) {
 			if syncType == "all" || syncType == "stock" {
 				if err := svc.SyncStock(ctx, client, company.CompanyID, loc.LocationID, loc.IikoOrgID); err != nil {
 					logger.Error().Err(err).Msg("sync: stock failed")
+				}
+			}
+
+			if syncType == "all" || syncType == "recipes" {
+				if err := svc.SyncRecipes(ctx, client, company.CompanyID, loc.LocationID, loc.IikoOrgID); err != nil {
+					logger.Error().Err(err).Msg("sync: recipes failed")
 				}
 			}
 		}

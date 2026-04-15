@@ -41,13 +41,47 @@ func (h *Handler) Routes() chi.Router {
 	return r
 }
 
+// Suggestion uses i18n KEYS + PARAMS rather than rendered text. This way the
+// backend stays locale-agnostic and the frontend renders strings in whatever
+// locale the user picked.
+//
+// Frontend resolves with `useT()`: e.g. `t(s.title_key, s.title_params)` where
+// `t` interpolates `{name}` placeholders from the params map.
+//
+// All param values are pre-formatted strings/numbers — backend takes care of
+// `formatProductName()` etc. so the frontend just substitutes verbatim.
 type Suggestion struct {
-	ID          string `json:"id"`
-	Type        string `json:"type"` // menu_optimization, purchase_recommendation, price_adjustment
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Impact      string `json:"impact"` // high, medium, low
-	Data        any    `json:"data,omitempty"`
+	ID                string         `json:"id"`
+	Type              string         `json:"type"` // menu_optimization, purchase_recommendation, price_adjustment, ...
+	TitleKey          string         `json:"title_key"`
+	TitleParams       map[string]any `json:"title_params,omitempty"`
+	DescriptionKey    string         `json:"description_key"`
+	DescriptionParams map[string]any `json:"description_params,omitempty"`
+	// SolutionKey: omitted for suggestions where there's no clear single fix
+	// (e.g. data-quality alerts that need investigation).
+	SolutionKey    string         `json:"solution_key,omitempty"`
+	SolutionParams map[string]any `json:"solution_params,omitempty"`
+	Impact         string         `json:"impact"` // high, medium, low
+	// Estimated monetary impact in restaurant currency (KZT). LossAmount is positive when there's
+	// money slipping away today (data errors, low margins, perishables); GainAmount is positive
+	// when acting on the suggestion would unlock additional revenue. Both are 0 / omitted when
+	// the suggestion is qualitative and we can't put a credible number on it.
+	LossAmount float64 `json:"loss_amount,omitempty"`
+	GainAmount float64 `json:"gain_amount,omitempty"`
+	Data       any     `json:"data,omitempty"`
+}
+
+// SuggestionsResponse — top-level shape consumed by the AI Suggestions page.
+// `summary.total_loss` and `total_gain_with_ai` are the headline metrics shown
+// at the top of the screen; they're sums over all returned suggestions so the
+// client doesn't have to recompute.
+type SuggestionsResponse struct {
+	Summary struct {
+		TotalLoss        float64 `json:"total_loss"`
+		TotalGainWithAI  float64 `json:"total_gain_with_ai"`
+		Date             string  `json:"date"` // YYYY-MM-DD when the snapshot was computed
+	} `json:"summary"`
+	Suggestions []Suggestion `json:"suggestions"`
 }
 
 func (h *Handler) GetSuggestions(w http.ResponseWriter, r *http.Request) {
@@ -70,20 +104,27 @@ func (h *Handler) GetSuggestions(w http.ResponseWriter, r *http.Request) {
 	h.db.QueryRow(r.Context(), query, args...).Scan(&topProduct, &topRevenue)
 
 	if topProduct != "" {
+		product := formatProductName(topProduct)
 		suggestions = append(suggestions, Suggestion{
-			ID:          uuid.New().String(),
-			Type:        "menu_optimization",
-			Title:       "Promote top seller: " + formatProductName(topProduct),
-			Description: "This product generates the highest revenue. Consider featuring it prominently on the menu or creating combo deals.",
-			Impact:      "high",
+			ID:                uuid.New().String(),
+			Type:              "menu_optimization",
+			TitleKey:          "ai.s.topSeller.title",
+			TitleParams:       map[string]any{"product": product},
+			DescriptionKey:    "ai.s.topSeller.description",
+			SolutionKey:       "ai.s.topSeller.solution",
+			SolutionParams:    map[string]any{"product": product},
+			Impact:            "high",
+			// Rule of thumb: a successful promotion bumps top-seller volume by ~10%.
+			GainAmount: topRevenue * 0.10,
 		})
 	}
 
 	// Low margin product alert
 	var lowMarginProduct string
 	var margin float64
+	var lowMarginRevenue float64
 	mArgs := []interface{}{companyID}
-	mQuery := `SELECT product_name,
+	mQuery := `SELECT product_name, SUM(revenue) AS total_rev,
 		CASE WHEN SUM(revenue) > 0 THEN ((SUM(revenue) - SUM(cost_price)) / SUM(revenue)) * 100 ELSE 0 END as margin
 		FROM product_sales_facts WHERE company_id = $1 AND cost_price > 0`
 	if locationID != "" {
@@ -91,15 +132,27 @@ func (h *Handler) GetSuggestions(w http.ResponseWriter, r *http.Request) {
 		mArgs = append(mArgs, locationID)
 	}
 	mQuery += ` GROUP BY product_name HAVING SUM(revenue) > 0 ORDER BY margin ASC LIMIT 1`
-	h.db.QueryRow(r.Context(), mQuery, mArgs...).Scan(&lowMarginProduct, &margin)
+	h.db.QueryRow(r.Context(), mQuery, mArgs...).Scan(&lowMarginProduct, &lowMarginRevenue, &margin)
 
 	if lowMarginProduct != "" && margin < 30 {
+		// Opportunity loss: how much extra profit if margin reached the 30% target.
+		// = revenue × (target − actual)/100. Caps at 0 if margin >= 30 (defensive).
+		opportunityLoss := lowMarginRevenue * (30.0 - margin) / 100.0
+		if opportunityLoss < 0 {
+			opportunityLoss = 0
+		}
+		product := formatProductName(lowMarginProduct)
 		suggestions = append(suggestions, Suggestion{
-			ID:          uuid.New().String(),
-			Type:        "price_adjustment",
-			Title:       "Low margin alert: " + formatProductName(lowMarginProduct),
-			Description: "This product has only " + formatPercent(margin) + "% margin. Consider raising the price or finding a cheaper supplier.",
-			Impact:      "medium",
+			ID:                uuid.New().String(),
+			Type:              "price_adjustment",
+			TitleKey:          "ai.s.lowMargin.title",
+			TitleParams:       map[string]any{"product": product},
+			DescriptionKey:    "ai.s.lowMargin.description",
+			DescriptionParams: map[string]any{"product": product, "margin": formatPercent(margin)},
+			SolutionKey:       "ai.s.lowMargin.solution",
+			SolutionParams:    map[string]any{"product": product},
+			Impact:            "medium",
+			LossAmount:        opportunityLoss,
 		})
 	}
 
@@ -139,12 +192,14 @@ func (h *Handler) GetSuggestions(w http.ResponseWriter, r *http.Request) {
 				names += fmt.Sprintf("%s (%.0f%%)", formatProductName(fmt.Sprintf("%v", p["product_name"])), p["margin"])
 			}
 			suggestions = append(suggestions, Suggestion{
-				ID:          uuid.New().String(),
-				Type:        "cost_configuration",
-				Title:       fmt.Sprintf("Возможно неверно настроена себестоимость (%d product(s))", len(suspicious)),
-				Description: "Следующие продукты имеют маржу >90% или <15%, что обычно указывает на неправильно настроенную себестоимость в iiko: " + names + ". Проверьте технологические карты блюд.",
-				Impact:      "high",
-				Data:        suspicious,
+				ID:                uuid.New().String(),
+				Type:              "cost_configuration",
+				TitleKey:          "ai.s.suspiciousMargin.title",
+				TitleParams:       map[string]any{"count": len(suspicious)},
+				DescriptionKey:    "ai.s.suspiciousMargin.description",
+				DescriptionParams: map[string]any{"count": len(suspicious), "names": names},
+				Impact:            "high",
+				Data:              suspicious,
 			})
 		}
 	}
@@ -195,19 +250,32 @@ func (h *Handler) GetSuggestions(w http.ResponseWriter, r *http.Request) {
 
 		if len(negative) > 0 {
 			names := ""
+			var negativeLoss float64
 			for i, p := range negative {
 				if i > 0 {
 					names += ", "
 				}
 				names += fmt.Sprintf("%s (%.1f)", formatProductName(fmt.Sprintf("%v", p["product_name"])), p["amount"])
+				// cost_sum mirrors the sign of amount (negative for negative stock); take abs.
+				if cs, ok := p["cost_sum"].(float64); ok {
+					if cs < 0 {
+						negativeLoss += -cs
+					} else {
+						negativeLoss += cs
+					}
+				}
 			}
 			suggestions = append(suggestions, Suggestion{
-				ID:          uuid.New().String(),
-				Type:        "stock_data_issue",
-				Title:       fmt.Sprintf("Отрицательный остаток на складе (%d позиц.)", len(negative)),
-				Description: "Эти позиции имеют отрицательное количество, что обычно означает ошибку ввода данных в iiko (продано больше, чем было на складе): " + names + ". Проверьте приходные накладные и списания.",
-				Impact:      "high",
-				Data:        negative,
+				ID:                uuid.New().String(),
+				Type:              "stock_data_issue",
+				TitleKey:          "ai.s.negativeStock.title",
+				TitleParams:       map[string]any{"count": len(negative)},
+				DescriptionKey:    "ai.s.negativeStock.description",
+				DescriptionParams: map[string]any{"count": len(negative), "names": names},
+				SolutionKey:       "ai.s.negativeStock.solution",
+				Impact:            "high",
+				LossAmount:        negativeLoss,
+				Data:              negative,
 			})
 		}
 
@@ -220,12 +288,14 @@ func (h *Handler) GetSuggestions(w http.ResponseWriter, r *http.Request) {
 				names += formatProductName(fmt.Sprintf("%v", p["product_name"]))
 			}
 			suggestions = append(suggestions, Suggestion{
-				ID:          uuid.New().String(),
-				Type:        "stock_data_issue",
-				Title:       fmt.Sprintf("Нулевая закупочная цена (%d позиц.)", len(zeroCost)),
-				Description: "Эти товары есть в остатках, но без закупочной цены в iiko: " + names + ". Добавьте цену прихода, чтобы корректно считать себестоимость и маржу.",
-				Impact:      "medium",
-				Data:        zeroCost,
+				ID:                uuid.New().String(),
+				Type:              "stock_data_issue",
+				TitleKey:          "ai.s.zeroCost.title",
+				TitleParams:       map[string]any{"count": len(zeroCost)},
+				DescriptionKey:    "ai.s.zeroCost.description",
+				DescriptionParams: map[string]any{"count": len(zeroCost), "names": names},
+				Impact:            "medium",
+				Data:              zeroCost,
 			})
 		}
 	}
@@ -244,25 +314,39 @@ func (h *Handler) GetSuggestions(w http.ResponseWriter, r *http.Request) {
 
 	if supplierName != "" {
 		suggestions = append(suggestions, Suggestion{
-			ID:          uuid.New().String(),
-			Type:        "purchase_recommendation",
-			Title:       "Review top supplier: " + supplierName,
-			Description: "Your largest supplier by spend. Consider negotiating volume discounts or comparing prices with alternatives.",
-			Impact:      "medium",
+			ID:             uuid.New().String(),
+			Type:           "purchase_recommendation",
+			TitleKey:       "ai.s.topSupplier.title",
+			TitleParams:    map[string]any{"supplier": supplierName},
+			DescriptionKey: "ai.s.topSupplier.description",
+			SolutionKey:    "ai.s.topSupplier.solution",
+			SolutionParams: map[string]any{"supplier": supplierName},
+			Impact:         "medium",
+			// Rule of thumb: a 5% volume discount on the top supplier compounds quickly.
+			GainAmount: purchaseTotal * 0.05,
 		})
 	}
 
 	if suggestions == nil {
 		suggestions = []Suggestion{{
-			ID:          uuid.New().String(),
-			Type:        "menu_optimization",
-			Title:       "Collect more data",
-			Description: "AI suggestions improve with more data. Keep syncing with iiko for at least 7 days to get meaningful recommendations.",
-			Impact:      "low",
+			ID:             uuid.New().String(),
+			Type:           "menu_optimization",
+			TitleKey:       "ai.s.collectMore.title",
+			DescriptionKey: "ai.s.collectMore.description",
+			Impact:         "low",
 		}}
 	}
 
-	writeJSON(w, http.StatusOK, suggestions)
+	// Aggregate headline metrics for the page header.
+	var resp SuggestionsResponse
+	resp.Suggestions = suggestions
+	for _, s := range suggestions {
+		resp.Summary.TotalLoss += s.LossAmount
+		resp.Summary.TotalGainWithAI += s.GainAmount
+	}
+	resp.Summary.Date = time.Now().Format("2006-01-02")
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 type Task struct {

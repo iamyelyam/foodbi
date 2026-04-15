@@ -113,12 +113,13 @@ type OrderAgg struct {
 	ItemCount   int
 }
 
-// Known iiko system measure-unit GUIDs. These are stable across tenants.
+// Known iiko system measure-unit GUIDs (derived empirically from this iiko tenant
+// by matching products with self-evident units in their names).
 var KnownUnitGUIDs = map[string]string{
-	"7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc": "шт",
-	"6040d92d-e286-f4f9-a613-ed0e6fd241e1": "кг",
-	"cd19b5ea-1b32-a6e5-1df7-5d2784a0549a": "л",
-	"69859c74-db72-b006-cba5-326cf6f4fc6e": "гр",
+	"7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc": "кг", // bulk: meat, grains, spices
+	"6040d92d-e286-f4f9-a613-ed0e6fd241e1": "шт", // countable: toothpicks, nuggets, towels
+	"cd19b5ea-1b32-a6e5-1df7-5d2784a0549a": "шт", // packaged goods: detergents, margarine
+	"69859c74-db72-b006-cba5-326cf6f4fc6e": "л",  // liquids: oil, water
 }
 
 // guessUnitFromName looks for suffix hints in a product name (КГ/ГР/МЛ/Л/ШТ).
@@ -143,22 +144,27 @@ func guessUnitFromName(name string) string {
 // Priority: iiko measure-unit map → known system GUIDs → guess from product name → "шт".
 func ResolveUnit(rawUnit, productName string, measureUnits map[string]string) string {
 	u := rawUnit
+	// 1) iiko measure-unit map (most authoritative when available)
 	if u != "" && measureUnits != nil {
 		if n, ok := measureUnits[u]; ok && n != "" {
 			return n
 		}
 	}
-	if len(u) > 30 { // still looks like a GUID
+	// 2) Already a short human-readable unit (not a GUID)
+	if u != "" && len(u) <= 30 {
+		return u
+	}
+	// 3) Name heuristic (more reliable than guessed-GUID map — names contain "КГ"/"Л"/"ГР")
+	if n := guessUnitFromName(productName); n != "" {
+		return n
+	}
+	// 4) Known iiko system GUID fallback (best-effort guesses)
+	if len(u) > 30 {
 		if n, ok := KnownUnitGUIDs[u]; ok {
 			return n
 		}
 	}
-	if u != "" && len(u) <= 30 {
-		return u // already a short readable unit
-	}
-	if n := guessUnitFromName(productName); n != "" {
-		return n
-	}
+	// 5) Last resort
 	return "шт"
 }
 
@@ -511,6 +517,104 @@ func (s *Service) SyncStock(ctx context.Context, client *iiko.Client, companyID,
 
 	s.completeSyncLog(ctx, logID, start, count)
 	log.Info().Int("records", count).Str("location", locationID.String()).Msg("sync: stock complete")
+	return nil
+}
+
+// SyncRecipes pulls technological cards (assembly charts) from iiko for every DISH
+// and PREPARED type product. Stores the dish→ingredient breakdown in recipe_components
+// so the stock UI can show "which dishes use this ingredient".
+//
+// One iiko round-trip per dish (~58 dishes for this restaurant), so this is bounded
+// and safe to run hourly. Existing rows for a dish are deleted+reinserted on each
+// sync to handle recipe changes (ingredient removed from card → row goes away).
+func (s *Service) SyncRecipes(ctx context.Context, client *iiko.Client, companyID, locationID uuid.UUID, iikoOrgID string) error {
+	logID, err := s.startSyncLog(ctx, companyID, locationID, "recipes")
+	if err != nil {
+		return err
+	}
+	start := time.Now()
+
+	nomen, err := client.GetNomenclature(ctx)
+	if err != nil {
+		s.failSyncLog(ctx, logID, start, err)
+		return fmt.Errorf("fetch nomenclature: %w", err)
+	}
+
+	// Filter to dishes/prepared items (the only types with assembly charts).
+	// dishUnit captures whether the recipe is per-portion or per-kilogram so the UI
+	// can render "0.24 л / порц." vs "1.84 л / кг". iiko sometimes returns the unit
+	// as a GUID or empty string — fall back by type (DISH → порц., PREPARED → кг).
+	type dishRef struct{ ID, Name, Unit string }
+	var dishes []dishRef
+	for _, p := range nomen {
+		t := strings.ToUpper(p.Type)
+		if t != "DISH" && t != "PREPARED" {
+			continue
+		}
+		unit := p.Unit
+		if unit == "" || len(unit) > 30 { // empty or GUID
+			if t == "PREPARED" {
+				unit = "кг"
+			} else {
+				unit = "порц."
+			}
+		}
+		dishes = append(dishes, dishRef{ID: p.ID, Name: p.Name, Unit: unit})
+	}
+	log.Info().Int("dishes", len(dishes)).Msg("sync: recipes — fetching assembly charts")
+
+	count := 0
+	skipped := 0
+	for _, d := range dishes {
+		components, err := client.GetAssemblyChart(ctx, d.ID)
+		if err != nil {
+			log.Warn().Err(err).Str("dish", d.Name).Msg("sync: recipe fetch failed")
+			continue
+		}
+		if len(components) == 0 {
+			skipped++ // dish has no recipe (resold goods like sodas)
+			continue
+		}
+
+		// Wipe & reinsert this dish's components atomically so removed ingredients drop out.
+		tx, err := s.db.Begin(ctx)
+		if err != nil {
+			log.Warn().Err(err).Str("dish", d.Name).Msg("sync: recipe tx begin failed")
+			continue
+		}
+		if _, err := tx.Exec(ctx,
+			`DELETE FROM recipe_components WHERE company_id = $1 AND dish_iiko_id = $2`,
+			companyID, d.ID); err != nil {
+			_ = tx.Rollback(ctx)
+			log.Warn().Err(err).Str("dish", d.Name).Msg("sync: recipe delete failed")
+			continue
+		}
+		for _, c := range components {
+			ingName := c.IngredientID
+			ingUnit := ""
+			if info, ok := nomen[c.IngredientID]; ok {
+				if info.Name != "" {
+					ingName = info.Name
+				}
+				ingUnit = info.Unit
+			}
+			if _, err := tx.Exec(ctx,
+				`INSERT INTO recipe_components (company_id, dish_iiko_id, dish_name, ingredient_iiko_id, ingredient_name, amount, unit, dish_unit, synced_at)
+				 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+				companyID, d.ID, d.Name, c.IngredientID, ingName, c.Amount, ingUnit, d.Unit); err != nil {
+				log.Warn().Err(err).Str("dish", d.Name).Str("ing", ingName).Msg("sync: recipe insert failed")
+			}
+		}
+		if err := tx.Commit(ctx); err != nil {
+			log.Warn().Err(err).Str("dish", d.Name).Msg("sync: recipe tx commit failed")
+			continue
+		}
+		count += len(components)
+	}
+
+	s.completeSyncLog(ctx, logID, start, count)
+	log.Info().Int("dishes_with_recipe", len(dishes)-skipped).Int("dishes_skipped_no_recipe", skipped).
+		Int("components", count).Str("location", locationID.String()).Msg("sync: recipes complete")
 	return nil
 }
 

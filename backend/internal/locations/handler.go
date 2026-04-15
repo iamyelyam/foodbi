@@ -73,7 +73,9 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 
 type CreateInput struct {
 	Name      string `json:"name" validate:"required"`
+	City      string `json:"city"`
 	Address   string `json:"address"`
+	PosSystem string `json:"pos_system"`
 	IikoOrgID string `json:"iiko_org_id"`
 }
 
@@ -98,9 +100,9 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	id := uuid.New()
 
 	_, err := h.db.Exec(r.Context(),
-		`INSERT INTO locations (id, company_id, name, address, iiko_org_id, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
-		id, companyID, input.Name, input.Address, nilIfEmpty(input.IikoOrgID))
+		`INSERT INTO locations (id, company_id, name, city, address, pos_system, iiko_org_id, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())`,
+		id, companyID, input.Name, nilIfEmpty(input.City), input.Address, nilIfEmpty(input.PosSystem), nilIfEmpty(input.IikoOrgID))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create location")
 		return

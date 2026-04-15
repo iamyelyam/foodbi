@@ -159,11 +159,37 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 		 FROM revenue_facts WHERE company_id = $1 AND order_date >= $2 AND order_date < $3`+prevLocFilter, prevArgs...).
 		Scan(&summary.PrevWeekRevenue)
 
-	// Today's profit = revenue - purchases for today
-	summary.TodayProfit = summary.TodayRevenue - summary.TodayPurchases
+	// Period profit = SUM(revenue) - SUM(cost_price of products sold) for selected range.
+	// Uses product_sales_facts (per-dish cost_price from iiko) — represents true COGS,
+	// not purchase invoices (which arrive irregularly).
+	cogsArgs := []interface{}{companyID, rangeStart, rangeEnd}
+	cogsLocFilter := ""
+	if locationID != "" {
+		cogsLocFilter = " AND location_id = $4"
+		cogsArgs = append(cogsArgs, locationID)
+	}
+	var periodCOGS float64
+	h.db.QueryRow(r.Context(),
+		`SELECT COALESCE(SUM(cost_price), 0)
+		 FROM product_sales_facts
+		 WHERE company_id = $1 AND sale_date >= $2 AND sale_date < $3`+cogsLocFilter, cogsArgs...).
+		Scan(&periodCOGS)
+	summary.TodayProfit = summary.TodayRevenue - periodCOGS
 
-	// Week profit = week revenue - week purchases
-	summary.WeekProfit = summary.WeekRevenue - summary.WeekPurchases
+	// Week profit = week revenue - week COGS
+	weekCogsArgs := []interface{}{companyID, weekStart}
+	weekCogsLocFilter := ""
+	if locationID != "" {
+		weekCogsLocFilter = " AND location_id = $3"
+		weekCogsArgs = append(weekCogsArgs, locationID)
+	}
+	var weekCOGS float64
+	h.db.QueryRow(r.Context(),
+		`SELECT COALESCE(SUM(cost_price), 0)
+		 FROM product_sales_facts
+		 WHERE company_id = $1 AND sale_date >= $2`+weekCogsLocFilter, weekCogsArgs...).
+		Scan(&weekCOGS)
+	summary.WeekProfit = summary.WeekRevenue - weekCOGS
 
 	if summary.PrevWeekRevenue > 0 {
 		summary.RevenueChangePercent = ((summary.WeekRevenue - summary.PrevWeekRevenue) / summary.PrevWeekRevenue) * 100

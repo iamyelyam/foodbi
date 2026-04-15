@@ -96,3 +96,24 @@ type ProductInfo struct {
 	Unit     string `json:"unit"`
 	Type     string `json:"type"`
 }
+
+// RecipeComponent — one ingredient line from an iiko assembly/prepared chart.
+// amount = quantity of this ingredient per 1 unit of the parent dish.
+type RecipeComponent struct {
+	IngredientID string  `json:"ingredient_id"`
+	Amount       float64 `json:"amount"`
+}
+
+// preparedChartResponse — JSON shape returned by /resto/api/v2/assemblyCharts/getPrepared.
+// We only model the fields we actually consume.
+type preparedChartResponse struct {
+	PreparedCharts []struct {
+		AssembledProductID string `json:"assembledProductId"`
+		DateFrom           string `json:"dateFrom"`
+		DateTo             *string `json:"dateTo"`
+		Items              []struct {
+			ProductID string  `json:"productId"`
+			Amount    float64 `json:"amount"`
+		} `json:"items"`
+	} `json:"preparedCharts"`
+}
