@@ -13,5 +13,7 @@ WORKDIR /app
 COPY --from=builder /api .
 COPY --from=builder /sync .
 COPY backend/migrations ./migrations
+COPY start-all.sh .
+RUN chmod +x start-all.sh ./api ./sync
 EXPOSE 8080
-CMD ["./api"]
+CMD ["./start-all.sh"]
