@@ -6,7 +6,7 @@ import { Header } from '@/components/layout/Header'
 import { Tabbar } from '@/components/layout/Tabbar'
 import { BottomSheet } from '@/components/layout/BottomSheet'
 import { useUnreadNotificationCount } from '@/hooks/useApi'
-import { Calendar, ChevronRight, Info, Sparkles, CheckSquare } from 'lucide-react'
+import { Info, Sparkles, CheckSquare } from 'lucide-react'
 import { useCurrency } from '@/stores/app'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
@@ -39,11 +39,6 @@ interface SuggestionsResponse {
 }
 
 const formatMoney = (v: number) => Math.round(v).toLocaleString('ru-KZ', { maximumFractionDigits: 0 })
-
-function formatHeaderDate(iso?: string): string {
-  const d = iso ? new Date(iso + 'T00:00:00') : new Date()
-  return `Today, ${d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}`
-}
 
 export function AISuggestionsPage() {
   const navigate = useNavigate()

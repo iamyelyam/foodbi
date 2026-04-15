@@ -582,7 +582,7 @@ function EditableMetricCard({
           <button
             onClick={onSubmit}
             disabled={isPending}
-            aria-label={t('common.save')}
+            aria-label="Save"
             className="w-6 h-6 rounded-full bg-primary flex items-center justify-center shrink-0"
           >
             <Check className="h-3.5 w-3.5 text-dark" />

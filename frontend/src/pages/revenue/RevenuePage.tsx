@@ -148,10 +148,10 @@ export function RevenuePage() {
     <div className="flex flex-col min-h-dvh bg-white">
       <Header title={t('revenue.title')} showBack showNotification badgeCount={unreadCount} />
 
-      {/* Date range picker button */}
+      {/* Date range summary — picker lives inside Filters sheet via DateRangeBlock */}
       <div className="px-4 pt-2 pb-3">
         <button
-          onClick={() => setShowRangePicker(true)}
+          onClick={() => setShowFilters(true)}
           className="flex items-center gap-2 text-sm font-medium text-dark"
         >
           <Calendar className="h-4 w-4 text-gray" />
