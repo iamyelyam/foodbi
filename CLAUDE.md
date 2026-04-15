@@ -30,6 +30,20 @@
 - DB: PostgreSQL with RLS tenant isolation via `app.current_tenant`
 - Sync: iiko Server API (OLAP reports + REST endpoints)
 
+## Session Start — Read Order (token-efficient)
+
+This project has ~200 source files. Reading them all eats ~200 KB of context. To stay under ~20 KB for most tasks, follow this order:
+
+1. **Read [docs/PROJECT-MAP.md](docs/PROJECT-MAP.md) FIRST.** It maps tasks → the specific files to open.
+2. **If the task touches a hot module**, read its `AGENTS.md` next. Hot modules (listed in PROJECT-MAP.md):
+   - Backend: `backend/internal/{sync,iiko,stock,revenue,purchases,ai}/AGENTS.md`
+   - Frontend: `frontend/src/pages/{stock,revenue,purchases,ai-suggestions}/AGENTS.md`
+3. **Only then** open the specific `.tsx` / `.go` files cited in the AGENTS.md.
+4. For cross-cutting topics (auth, RLS, i18n architecture, migrations), read `docs/ARCHITECTURE.md` FIRST before diving into files.
+5. **Never load** `node_modules/`, `frontend/ios/Pods/`, `frontend/dist/`, compiled binaries.
+
+If a non-hot module keeps coming up in your tasks, create an `AGENTS.md` for it (template: 50–150 lines, sections "Purpose / Files / Tables / Gotchas / When editing").
+
 ## Documentation Maintenance Protocol
 
 The project has full documentation under `docs/` (README, ARCHITECTURE, GETTING-STARTED, DEVELOPMENT, TESTING, CONFIGURATION, API, DEPLOYMENT). These docs are generated via `/gsd-docs-update` and verified against the live codebase.
