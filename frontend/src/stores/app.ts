@@ -7,16 +7,59 @@ interface CompanySettings {
   locale: string
 }
 
+// User-level UI preferences persisted to localStorage. Survives reloads & re-logins
+// on the same device. Not synced to backend (per-device by design — different users
+// on the same browser may want different experiences).
+interface UiPrefs {
+  showUploadInvoicesBanner: boolean
+}
+const UI_PREFS_KEY = 'foodbi-ui-prefs-v1'
+const DEFAULT_UI_PREFS: UiPrefs = { showUploadInvoicesBanner: true }
+function readUiPrefs(): UiPrefs {
+  try {
+    const s = typeof localStorage !== 'undefined' ? localStorage.getItem(UI_PREFS_KEY) : null
+    if (!s) return DEFAULT_UI_PREFS
+    return { ...DEFAULT_UI_PREFS, ...JSON.parse(s) }
+  } catch {
+    return DEFAULT_UI_PREFS
+  }
+}
+function writeUiPrefs(p: UiPrefs) {
+  try {
+    localStorage.setItem(UI_PREFS_KEY, JSON.stringify(p))
+  } catch {
+    /* localStorage unavailable (private mode, quota) — preference is session-only */
+  }
+}
+
 interface AppState {
+  // Multi-select location filter. Empty array == "all locations".
+  selectedLocationIds: string[]
+  // Derived: when exactly 1 location selected → its id. Else null.
+  // Backend currently accepts a single ?location_id=, so this drives API filtering.
   activeLocationId: string | null
+  setSelectedLocations: (ids: string[]) => void
+  /** @deprecated use setSelectedLocations */
   setActiveLocation: (id: string | null) => void
   companySettings: CompanySettings
   setCompanySettings: (settings: CompanySettings) => void
+  uiPrefs: UiPrefs
+  setUiPref: <K extends keyof UiPrefs>(key: K, value: UiPrefs[K]) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
+  selectedLocationIds: [],
   activeLocationId: null,
-  setActiveLocation: (id) => set({ activeLocationId: id }),
+  setSelectedLocations: (ids) =>
+    set({
+      selectedLocationIds: ids,
+      activeLocationId: ids.length === 1 ? ids[0] : null,
+    }),
+  setActiveLocation: (id) =>
+    set({
+      activeLocationId: id,
+      selectedLocationIds: id ? [id] : [],
+    }),
   companySettings: {
     country: 'KZ',
     currency: 'KZT',
@@ -24,6 +67,13 @@ export const useAppStore = create<AppState>((set) => ({
     locale: 'ru-KZ',
   },
   setCompanySettings: (settings) => set({ companySettings: settings }),
+  uiPrefs: readUiPrefs(),
+  setUiPref: (key, value) =>
+    set((s) => {
+      const next = { ...s.uiPrefs, [key]: value }
+      writeUiPrefs(next)
+      return { uiPrefs: next }
+    }),
 }))
 
 /** Helper hook — returns just the currency symbol for formatting */

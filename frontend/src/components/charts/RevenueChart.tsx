@@ -11,16 +11,20 @@ interface DataPoint {
 interface RevenueChartProps {
   data: DataPoint[]
   height?: number
+  /** Custom formatter for tooltip value (e.g. for non-money metrics like Orders/MI/T). Defaults to money. */
+  valueFormatter?: (v: number) => string
 }
 
-export function RevenueChart({ data, height = 200 }: RevenueChartProps) {
+export function RevenueChart({ data, height = 200, valueFormatter }: RevenueChartProps) {
   const cs = useCurrency()
   const formatted = data.map((d) => ({
     ...d,
     label: new Date(d.date).toLocaleDateString('en', { month: 'short', day: 'numeric' }),
   }))
 
-  const fmt = (v: number) => Number(v).toLocaleString('ru-KZ', { maximumFractionDigits: 0 })
+  const defaultMoneyFmt = (v: number) =>
+    `${Number(v).toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}${cs}`
+  const fmt = valueFormatter ?? defaultMoneyFmt
 
   return (
     <ResponsiveContainer width="100%" height={height}>
@@ -50,10 +54,7 @@ export function RevenueChart({ data, height = 200 }: RevenueChartProps) {
                 }}
               >
                 <div style={{ fontSize: 10, opacity: 0.7, marginBottom: 2 }}>{label}</div>
-                <div style={{ fontWeight: 700 }}>
-                  {fmt(p.revenue)}
-                  {cs}
-                </div>
+                <div style={{ fontWeight: 700 }}>{fmt(p.revenue)}</div>
                 {txn !== undefined && txn !== null && (
                   <div style={{ opacity: 0.8, marginTop: 2 }}>
                     {txn} {txn === 1 ? 'transaction' : 'transactions'}

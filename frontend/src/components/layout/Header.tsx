@@ -1,6 +1,11 @@
-import { ChevronLeft, Bell, ChevronDown } from 'lucide-react'
+import { ChevronLeft, ChevronDown } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
+
+// TEMP: notifications hidden across the project until the feature is ready.
+// Flip back to `true` (or delete this flag and uncomment the bell code below)
+// when notifications/center is finished.
+const NOTIFICATIONS_ENABLED = false
 
 interface HeaderProps {
   title: string
@@ -33,14 +38,10 @@ export function Header({ title, subtitle, showBack = false, showNotification = f
           )}
         </div>
       </div>
-      {showNotification && (
+      {/* Bell hidden globally — see NOTIFICATIONS_ENABLED at top of file. */}
+      {NOTIFICATIONS_ENABLED && showNotification && badgeCount >= 0 && (
         <button onClick={() => navigate('/notifications')} className="p-1 relative">
-          <Bell className="h-6 w-6 text-dark" />
-          {badgeCount > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 rounded-full bg-danger text-white text-[10px] font-bold flex items-center justify-center px-1">
-              {badgeCount > 99 ? '99+' : badgeCount}
-            </span>
-          )}
+          {/* re-enable: import { Bell } and render <Bell className="h-6 w-6 text-dark" /> + badge */}
         </button>
       )}
     </header>

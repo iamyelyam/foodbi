@@ -15,7 +15,7 @@ interface LocationSwitcherProps {
 
 export function LocationSwitcher({ isOpen, onClose }: LocationSwitcherProps) {
   const navigate = useNavigate()
-  const { activeLocationId, setActiveLocation } = useAppStore()
+  const { selectedLocationIds, setSelectedLocations } = useAppStore()
   const [search, setSearch] = useState('')
 
   const { data: locations = [] } = useQuery({
@@ -34,9 +34,20 @@ export function LocationSwitcher({ isOpen, onClose }: LocationSwitcherProps) {
     )
   }, [locations, search])
 
-  const handleSelect = (id: string) => {
-    setActiveLocation(id)
-    onClose()
+  const allIds = useMemo(() => locations.map((l: any) => l.id as string), [locations])
+  const isAllSelected = selectedLocationIds.length === 0 || selectedLocationIds.length === allIds.length
+
+  const toggleLocation = (id: string) => {
+    const set = new Set(selectedLocationIds)
+    if (set.has(id)) set.delete(id)
+    else set.add(id)
+    const next = Array.from(set)
+    // If user reduced to nothing, treat as "all" (empty array)
+    setSelectedLocations(next.length === allIds.length ? [] : next)
+  }
+
+  const selectAll = () => {
+    setSelectedLocations([])
   }
 
   return (
@@ -53,31 +64,31 @@ export function LocationSwitcher({ isOpen, onClose }: LocationSwitcherProps) {
       <div className="space-y-2">
         {/* All locations option */}
         <button
-          onClick={() => handleSelect('')}
+          onClick={selectAll}
           className={cn(
             'w-full flex items-center gap-3 p-3 rounded-[12px] text-left transition-colors',
-            !activeLocationId ? 'bg-primary/5 ring-1 ring-primary' : 'hover:bg-bg-alt'
+            isAllSelected ? 'bg-primary/5 ring-1 ring-primary' : 'hover:bg-bg-alt'
           )}
         >
           <div className={cn(
             'w-10 h-10 rounded-full flex items-center justify-center',
-            !activeLocationId ? 'bg-primary' : 'bg-primary-lighter'
+            isAllSelected ? 'bg-primary' : 'bg-primary-lighter'
           )}>
-            <MapPin className={cn('h-5 w-5', !activeLocationId ? 'text-white' : 'text-primary')} />
+            <MapPin className={cn('h-5 w-5', isAllSelected ? 'text-white' : 'text-primary')} />
           </div>
           <div className="flex-1">
             <p className="text-sm font-semibold text-dark">All locations</p>
             <p className="text-xs text-gray mt-0.5">View combined data</p>
           </div>
-          {!activeLocationId && <Check className="h-5 w-5 text-primary" />}
+          {isAllSelected && <Check className="h-5 w-5 text-primary" />}
         </button>
 
         {filtered.map((loc: any) => {
-          const isActive = activeLocationId === loc.id
+          const isActive = !isAllSelected && selectedLocationIds.includes(loc.id)
           return (
             <button
               key={loc.id}
-              onClick={() => handleSelect(loc.id)}
+              onClick={() => toggleLocation(loc.id)}
               className={cn(
                 'w-full flex items-center gap-3 p-3 rounded-[12px] text-left transition-colors',
                 isActive ? 'bg-primary/5 ring-1 ring-primary' : 'hover:bg-bg-alt'
@@ -115,6 +126,13 @@ export function LocationSwitcher({ isOpen, onClose }: LocationSwitcherProps) {
             <Plus className="h-5 w-5 text-gray" />
           </div>
           <span className="text-sm font-medium text-primary">Add Location</span>
+        </button>
+
+        <button
+          onClick={onClose}
+          className="w-full mt-2 py-3 rounded-full bg-primary text-dark font-semibold"
+        >
+          Done
         </button>
       </div>
     </BottomSheet>

@@ -34,27 +34,40 @@ export const useI18nStore = create<I18nState>((set) => ({
  * Translation hook. Usage:
  * ```
  * const t = useT()
- * t('dashboard.totalRevenue') // "Общая выручка"
+ * t('dashboard.totalRevenue')                          // "Общая выручка"
+ * t('ai.s.topSeller.title', { product: 'Плов' })       // "Promote top seller: Плов"
  * ```
+ *
+ * Supports `{name}`-style placeholders interpolated from the optional `params`
+ * object. Used by backend i18n flow where backend returns keys + params and
+ * frontend renders the localized string.
  */
 export function useT() {
   const locale = useI18nStore((s) => s.locale)
   const dict = translations[locale] ?? translations.en
 
-  return function t(key: string): string {
-    const parts = key.split('.')
-    let val: any = dict
-    for (const part of parts) {
-      val = val?.[part]
-      if (val === undefined) break
+  return function t(
+    key: string,
+    params?: Record<string, string | number>
+  ): string {
+    const lookup = (root: any) => {
+      let val: any = root
+      for (const part of key.split('.')) {
+        val = val?.[part]
+        if (val === undefined) return undefined
+      }
+      return val
     }
-    if (typeof val === 'string') return val
-    // Fallback to English
-    let fallback: any = translations.en
-    for (const part of parts) {
-      fallback = fallback?.[part]
-      if (fallback === undefined) break
+    let resolved = lookup(dict)
+    if (typeof resolved !== 'string') {
+      const fallback = lookup(translations.en)
+      resolved = typeof fallback === 'string' ? fallback : key
     }
-    return typeof fallback === 'string' ? fallback : key
+    if (params) {
+      resolved = resolved.replace(/\{(\w+)\}/g, (_m: string, k: string) =>
+        params[k] !== undefined ? String(params[k]) : `{${k}}`
+      )
+    }
+    return resolved
   }
 }
