@@ -45,13 +45,37 @@ body {
   margin: 0;
   background-color: var(--color-bg);
   color: var(--color-dark);
-  max-width: 375px;
-  margin-inline: auto;
   min-height: 100dvh;
+  /* Block mobile browsers from trying to "improve" text sizes. */
+  -webkit-text-size-adjust: 100%;
+  /* Disable pull-to-refresh / bounce on iOS webviews. */
+  overscroll-behavior-y: contain;
+  /* Honor the notch/home-indicator safe area when content goes fullbleed. */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* On narrow screens (real phones, Capacitor WebView) use full width.
+   On wider screens (desktop browser preview) cap at 375px so the mobile
+   layout stays representative. */
+@media (min-width: 640px) {
+  body {
+    max-width: 375px;
+    margin-inline: auto;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
 }
 
 #root {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
+}
+
+/* Disable double-tap-to-zoom and iOS tap highlight rectangles that feel
+   web-y inside a native webview wrapper. */
+button, a {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
