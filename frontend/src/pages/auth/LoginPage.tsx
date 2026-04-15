@@ -90,6 +90,8 @@ export function LoginPage() {
             type="password"
             placeholder="Enter password"
             autoFocus
+            autoComplete="current-password"
+            onFocus={(e) => e.target.select()}
             error={passForm.formState.errors.password?.message}
             {...passForm.register('password')}
           />

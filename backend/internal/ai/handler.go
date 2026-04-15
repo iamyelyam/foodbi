@@ -4,13 +4,26 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/foodbi/backend/internal/middleware"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// formatProductName capitalizes first letter and lowercases the rest.
+func formatProductName(name string) string {
+	if name == "" {
+		return ""
+	}
+	lower := strings.ToLower(name)
+	runes := []rune(lower)
+	runes[0] = unicode.ToUpper(runes[0])
+	return string(runes)
+}
 
 type Handler struct {
 	db *pgxpool.Pool
@@ -60,7 +73,7 @@ func (h *Handler) GetSuggestions(w http.ResponseWriter, r *http.Request) {
 		suggestions = append(suggestions, Suggestion{
 			ID:          uuid.New().String(),
 			Type:        "menu_optimization",
-			Title:       "Promote top seller: " + topProduct,
+			Title:       "Promote top seller: " + formatProductName(topProduct),
 			Description: "This product generates the highest revenue. Consider featuring it prominently on the menu or creating combo deals.",
 			Impact:      "high",
 		})
@@ -84,10 +97,137 @@ func (h *Handler) GetSuggestions(w http.ResponseWriter, r *http.Request) {
 		suggestions = append(suggestions, Suggestion{
 			ID:          uuid.New().String(),
 			Type:        "price_adjustment",
-			Title:       "Low margin alert: " + lowMarginProduct,
+			Title:       "Low margin alert: " + formatProductName(lowMarginProduct),
 			Description: "This product has only " + formatPercent(margin) + "% margin. Consider raising the price or finding a cheaper supplier.",
 			Impact:      "medium",
 		})
+	}
+
+	// Suspicious margin detection — likely misconfigured cost price in iiko
+	// Margin > 90% (cost too low, or recipe not set up) or < 15% (cost too high, wrong recipe)
+	suspArgs := []interface{}{companyID}
+	suspQuery := `SELECT product_name,
+		CASE WHEN SUM(revenue) > 0 THEN (1 - SUM(cost_price)/SUM(revenue)) * 100 ELSE 0 END as margin
+		FROM product_sales_facts WHERE company_id = $1`
+	if locationID != "" {
+		suspQuery += ` AND location_id = $2`
+		suspArgs = append(suspArgs, locationID)
+	}
+	suspQuery += ` GROUP BY product_name
+		HAVING SUM(revenue) > 0
+		AND ((1 - SUM(cost_price)/SUM(revenue)) * 100 > 90
+		  OR (1 - SUM(cost_price)/SUM(revenue)) * 100 < 15)
+		ORDER BY SUM(revenue) DESC LIMIT 10`
+	rows, err := h.db.Query(r.Context(), suspQuery, suspArgs...)
+	if err == nil {
+		defer rows.Close()
+		var suspicious []map[string]any
+		for rows.Next() {
+			var name string
+			var m float64
+			if err := rows.Scan(&name, &m); err != nil {
+				continue
+			}
+			suspicious = append(suspicious, map[string]any{"product_name": name, "margin": m})
+		}
+		if len(suspicious) > 0 {
+			names := ""
+			for i, p := range suspicious {
+				if i > 0 {
+					names += ", "
+				}
+				names += fmt.Sprintf("%s (%.0f%%)", formatProductName(fmt.Sprintf("%v", p["product_name"])), p["margin"])
+			}
+			suggestions = append(suggestions, Suggestion{
+				ID:          uuid.New().String(),
+				Type:        "cost_configuration",
+				Title:       fmt.Sprintf("Возможно неверно настроена себестоимость (%d product(s))", len(suspicious)),
+				Description: "Следующие продукты имеют маржу >90% или <15%, что обычно указывает на неправильно настроенную себестоимость в iiko: " + names + ". Проверьте технологические карты блюд.",
+				Impact:      "high",
+				Data:        suspicious,
+			})
+		}
+	}
+
+	// Stock data issues — group negative amounts and unpriced items on the shelf
+	stockArgs := []interface{}{companyID}
+	stockLocFilter := ""
+	if locationID != "" {
+		stockLocFilter = " AND s.location_id = $2"
+		stockArgs = append(stockArgs, locationID)
+	}
+	// Take the latest snapshot per product (stock is snapshotted over time)
+	stockQuery := `
+		WITH latest AS (
+			SELECT DISTINCT ON (s.iiko_product_id)
+				s.iiko_product_id, s.product_name, s.amount, s.cost_sum, s.snapshot_at
+			FROM stock_snapshots s
+			WHERE s.company_id = $1` + stockLocFilter + `
+			ORDER BY s.iiko_product_id, s.snapshot_at DESC
+		)
+		SELECT product_name, amount, cost_sum,
+			CASE
+				WHEN amount < 0 THEN 'negative_amount'
+				WHEN amount > 0 AND cost_sum = 0 THEN 'zero_cost'
+			END AS issue
+		FROM latest
+		WHERE amount < 0 OR (amount > 0 AND cost_sum = 0)
+		ORDER BY ABS(amount) DESC LIMIT 15`
+
+	srows, serr := h.db.Query(r.Context(), stockQuery, stockArgs...)
+	if serr == nil {
+		defer srows.Close()
+		var negative []map[string]any
+		var zeroCost []map[string]any
+		for srows.Next() {
+			var name, issue string
+			var amount, cost float64
+			if err := srows.Scan(&name, &amount, &cost, &issue); err != nil {
+				continue
+			}
+			row := map[string]any{"product_name": name, "amount": amount, "cost_sum": cost}
+			if issue == "negative_amount" {
+				negative = append(negative, row)
+			} else if issue == "zero_cost" {
+				zeroCost = append(zeroCost, row)
+			}
+		}
+
+		if len(negative) > 0 {
+			names := ""
+			for i, p := range negative {
+				if i > 0 {
+					names += ", "
+				}
+				names += fmt.Sprintf("%s (%.1f)", formatProductName(fmt.Sprintf("%v", p["product_name"])), p["amount"])
+			}
+			suggestions = append(suggestions, Suggestion{
+				ID:          uuid.New().String(),
+				Type:        "stock_data_issue",
+				Title:       fmt.Sprintf("Отрицательный остаток на складе (%d позиц.)", len(negative)),
+				Description: "Эти позиции имеют отрицательное количество, что обычно означает ошибку ввода данных в iiko (продано больше, чем было на складе): " + names + ". Проверьте приходные накладные и списания.",
+				Impact:      "high",
+				Data:        negative,
+			})
+		}
+
+		if len(zeroCost) > 0 {
+			names := ""
+			for i, p := range zeroCost {
+				if i > 0 {
+					names += ", "
+				}
+				names += formatProductName(fmt.Sprintf("%v", p["product_name"]))
+			}
+			suggestions = append(suggestions, Suggestion{
+				ID:          uuid.New().String(),
+				Type:        "stock_data_issue",
+				Title:       fmt.Sprintf("Нулевая закупочная цена (%d позиц.)", len(zeroCost)),
+				Description: "Эти товары есть в остатках, но без закупочной цены в iiko: " + names + ". Добавьте цену прихода, чтобы корректно считать себестоимость и маржу.",
+				Impact:      "medium",
+				Data:        zeroCost,
+			})
+		}
 	}
 
 	// Purchase pattern suggestion

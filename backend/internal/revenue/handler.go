@@ -2,7 +2,6 @@ package revenue
 
 import (
 	"encoding/json"
-	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -62,8 +61,8 @@ func (h *Handler) ListOrders(w http.ResponseWriter, r *http.Request) {
 	if page < 1 {
 		page = 1
 	}
-	perPage := 20
-	offset := (page - 1) * perPage
+	// No pagination — always return all orders for the selected period.
+	_ = page
 
 	query := `SELECT id, COALESCE(order_number, ''), order_date, revenue, discount, order_type, status, item_count, COALESCE(waiter_name, '')
 		FROM revenue_facts WHERE company_id = $1`
@@ -99,8 +98,7 @@ func (h *Handler) ListOrders(w http.ResponseWriter, r *http.Request) {
 	var total int
 	h.db.QueryRow(r.Context(), countQuery, args...).Scan(&total)
 
-	query += ` ORDER BY order_date DESC LIMIT $` + strconv.Itoa(argIdx) + ` OFFSET $` + strconv.Itoa(argIdx+1)
-	args = append(args, perPage, offset)
+	query += ` ORDER BY order_date DESC`
 
 	rows, err := h.db.Query(r.Context(), query, args...)
 	if err != nil {
@@ -126,28 +124,69 @@ func (h *Handler) ListOrders(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, OrdersResponse{
 		Orders:     orders,
 		Total:      total,
-		Page:       page,
-		PerPage:    perPage,
-		TotalPages: int(math.Ceil(float64(total) / float64(perPage))),
+		Page:       1,
+		PerPage:    total,
+		TotalPages: 1,
 	})
+}
+
+type OrderItem struct {
+	ProductName string  `json:"product_name"`
+	Quantity    float64 `json:"quantity"`
+	Revenue     float64 `json:"revenue"`
+	CostPrice   float64 `json:"cost_price"`
+}
+
+type OrderDetail struct {
+	Order
+	TotalCost float64     `json:"total_cost"`
+	Profit    float64     `json:"profit"`
+	Items     []OrderItem `json:"items"`
 }
 
 func (h *Handler) GetOrder(w http.ResponseWriter, r *http.Request) {
 	companyID := middleware.GetCompanyID(r.Context())
 	orderID := chi.URLParam(r, "id")
 
-	var o Order
+	var detail OrderDetail
 	var orderDate time.Time
 	err := h.db.QueryRow(r.Context(),
 		`SELECT id, COALESCE(order_number, ''), order_date, revenue, discount, order_type, status, item_count, COALESCE(waiter_name, '')
 		 FROM revenue_facts WHERE id = $1 AND company_id = $2`,
-		orderID, companyID).Scan(&o.ID, &o.OrderNumber, &orderDate, &o.Revenue, &o.Discount, &o.OrderType, &o.Status, &o.ItemCount, &o.Waiter)
+		orderID, companyID).Scan(&detail.ID, &detail.OrderNumber, &orderDate, &detail.Revenue, &detail.Discount, &detail.OrderType, &detail.Status, &detail.ItemCount, &detail.Waiter)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "order not found")
 		return
 	}
-	o.OrderDate = orderDate.Format(time.RFC3339)
-	writeJSON(w, http.StatusOK, o)
+	detail.OrderDate = orderDate.Format(time.RFC3339)
+
+	// Fetch line items aggregated per product for this order
+	// order_id in product_sales_facts is the iiko UniqOrderId.Id, which equals revenue_facts.iiko_order_id
+	rows, err := h.db.Query(r.Context(),
+		`SELECT psf.product_name, SUM(psf.quantity), SUM(psf.revenue), SUM(psf.cost_price)
+		 FROM product_sales_facts psf
+		 JOIN revenue_facts rf ON rf.iiko_order_id = psf.order_id AND rf.company_id = psf.company_id
+		 WHERE rf.id = $1 AND rf.company_id = $2
+		 GROUP BY psf.product_name
+		 ORDER BY SUM(psf.revenue) DESC`,
+		orderID, companyID)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var it OrderItem
+			if err := rows.Scan(&it.ProductName, &it.Quantity, &it.Revenue, &it.CostPrice); err != nil {
+				continue
+			}
+			detail.Items = append(detail.Items, it)
+			detail.TotalCost += it.CostPrice
+		}
+	}
+	if detail.Items == nil {
+		detail.Items = []OrderItem{}
+	}
+	detail.Profit = detail.Revenue - detail.TotalCost
+
+	writeJSON(w, http.StatusOK, detail)
 }
 
 type ProductSummary struct {
@@ -187,7 +226,7 @@ func (h *Handler) ListProducts(w http.ResponseWriter, r *http.Request) {
 		argIdx++
 	}
 
-	query += ` GROUP BY iiko_product_id, product_name, category ORDER BY SUM(revenue) DESC LIMIT 50`
+	query += ` GROUP BY iiko_product_id, product_name, category ORDER BY SUM(revenue) DESC`
 
 	rows, err := h.db.Query(r.Context(), query, args...)
 	if err != nil {
@@ -285,13 +324,31 @@ func (h *Handler) UpdateOrderStatus(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetProductTrend(w http.ResponseWriter, r *http.Request) {
 	companyID := middleware.GetCompanyID(r.Context())
 	productID := chi.URLParam(r, "id")
+	dateFrom := r.URL.Query().Get("date_from")
+	dateTo := r.URL.Query().Get("date_to")
 
-	rows, err := h.db.Query(r.Context(),
-		`SELECT sale_date, SUM(quantity), SUM(revenue)
-		 FROM product_sales_facts
-		 WHERE company_id = $1 AND iiko_product_id = $2 AND sale_date >= NOW() - INTERVAL '30 days'
-		 GROUP BY sale_date ORDER BY sale_date`,
-		companyID, productID)
+	query := `SELECT sale_date, SUM(quantity), SUM(revenue), COUNT(DISTINCT order_id)
+		FROM product_sales_facts
+		WHERE company_id = $1 AND iiko_product_id = $2`
+	args := []interface{}{companyID, productID}
+	argIdx := 3
+	if dateFrom != "" {
+		query += ` AND sale_date >= $` + strconv.Itoa(argIdx)
+		args = append(args, dateFrom)
+		argIdx++
+	}
+	if dateTo != "" {
+		query += ` AND sale_date < ($` + strconv.Itoa(argIdx) + `::date + 1)`
+		args = append(args, dateTo)
+		argIdx++
+	}
+	// If no date range supplied, default to last 30 days
+	if dateFrom == "" && dateTo == "" {
+		query += ` AND sale_date >= NOW() - INTERVAL '30 days'`
+	}
+	query += ` GROUP BY sale_date ORDER BY sale_date`
+
+	rows, err := h.db.Query(r.Context(), query, args...)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to fetch trend")
 		return
@@ -299,16 +356,17 @@ func (h *Handler) GetProductTrend(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	type TrendPoint struct {
-		Date     string  `json:"date"`
-		Revenue  float64 `json:"revenue"`
-		Quantity float64 `json:"quantity"`
+		Date         string  `json:"date"`
+		Revenue      float64 `json:"revenue"`
+		Quantity     float64 `json:"quantity"`
+		Transactions int     `json:"transactions"`
 	}
 
 	var points []TrendPoint
 	for rows.Next() {
 		var p TrendPoint
 		var d time.Time
-		if err := rows.Scan(&d, &p.Quantity, &p.Revenue); err != nil {
+		if err := rows.Scan(&d, &p.Quantity, &p.Revenue, &p.Transactions); err != nil {
 			continue
 		}
 		p.Date = d.Format("2006-01-02")

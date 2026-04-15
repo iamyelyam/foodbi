@@ -67,8 +67,17 @@ func (c *Client) GetPurchaseInvoices(ctx context.Context, dateFrom, dateTo strin
 	for _, doc := range xmlResp.Documents {
 		inDate, _ := time.Parse("2006-01-02", doc.IncomingDate)
 		var totalSum float64
+		items := make([]PurchaseInvoiceItem, 0, len(doc.Items))
 		for _, item := range doc.Items {
 			totalSum += item.Sum
+			items = append(items, PurchaseInvoiceItem{
+				ProductID:   item.Product,
+				ProductName: item.Product, // GUID — resolved via nomenclature in sync
+				Code:        item.Code,
+				Amount:      item.Amount,
+				Price:       item.Price,
+				Sum:         item.Sum,
+			})
 		}
 		invoices = append(invoices, PurchaseInvoice{
 			ID:             doc.ID,
@@ -78,6 +87,7 @@ func (c *Client) GetPurchaseInvoices(ctx context.Context, dateFrom, dateTo strin
 			SupplierName:   doc.Supplier, // Server API returns supplier ID, name resolved separately
 			Status:         doc.Status,
 			Sum:            totalSum,
+			Items:          items,
 		})
 	}
 
@@ -122,7 +132,38 @@ func (c *Client) GetStockBalance(ctx context.Context) ([]StockItem, error) {
 }
 
 // GetNomenclature fetches product names and categories from iiko Server API.
+// Tries XML v1 first (returns unit as readable string), falls back to JSON v2 (unit is GUID).
 func (c *Client) GetNomenclature(ctx context.Context) (map[string]ProductInfo, error) {
+	// Try XML v1 — returns mainUnit as text like "кг", "шт"
+	if data, err := c.doGet(ctx, "/resto/api/products", nil); err == nil {
+		var xmlResp struct {
+			XMLName  xml.Name `xml:"products"`
+			Products []struct {
+				ID       string `xml:"id"`
+				Name     string `xml:"name"`
+				Category string `xml:"category"`
+				Group    string `xml:"group"`
+				Unit     string `xml:"mainUnit"`
+				Type     string `xml:"type"`
+			} `xml:"product"`
+		}
+		if err := xml.Unmarshal(data, &xmlResp); err == nil && len(xmlResp.Products) > 0 {
+			result := make(map[string]ProductInfo, len(xmlResp.Products))
+			for _, p := range xmlResp.Products {
+				result[p.ID] = ProductInfo{
+					ID:       p.ID,
+					Name:     p.Name,
+					Category: p.Category,
+					Group:    p.Group,
+					Unit:     p.Unit,
+					Type:     p.Type,
+				}
+			}
+			return result, nil
+		}
+	}
+
+	// Fallback to JSON v2
 	data, err := c.doGet(ctx, "/resto/api/v2/entities/products/list", nil)
 	if err != nil {
 		return nil, fmt.Errorf("get nomenclature: %w", err)
@@ -155,9 +196,72 @@ func (c *Client) GetNomenclature(ctx context.Context) (map[string]ProductInfo, e
 	return result, nil
 }
 
+// GetMeasureUnits fetches measure unit dictionary from iiko (GUID -> name like "кг", "шт", "л").
+// Tries multiple known endpoints across iiko versions.
+func (c *Client) GetMeasureUnits(ctx context.Context) (map[string]string, error) {
+	endpoints := []string{
+		"/resto/api/v2/entities/measureUnits/list",
+		"/resto/api/v2/entities/measure-units/list",
+		"/resto/api/v2/entities/measure/list",
+	}
+
+	for _, ep := range endpoints {
+		data, err := c.doGet(ctx, ep, nil)
+		if err != nil {
+			continue
+		}
+		var units []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+			Code string `json:"code"`
+		}
+		if err := json.Unmarshal(data, &units); err != nil {
+			continue
+		}
+		if len(units) == 0 {
+			continue
+		}
+		result := make(map[string]string, len(units))
+		for _, u := range units {
+			if u.Name != "" {
+				result[u.ID] = u.Name
+			}
+		}
+		return result, nil
+	}
+	return nil, fmt.Errorf("no measure units endpoint matched")
+}
+
 // GetSuppliers fetches supplier list from iiko Server API.
+// Tries multiple endpoints since different iiko Server versions expose suppliers differently.
 func (c *Client) GetSuppliers(ctx context.Context) (map[string]string, error) {
-	data, err := c.doGet(ctx, "/resto/api/v2/entities/suppliers/list", nil)
+	// First try the XML employees endpoint — suppliers are often stored as employees with "Supplier" role.
+	data, err := c.doGet(ctx, "/resto/api/employees", nil)
+	if err == nil {
+		var xmlResp struct {
+			XMLName   xml.Name `xml:"employees"`
+			Employees []struct {
+				ID   string `xml:"id"`
+				Name string `xml:"name"`
+				Code string `xml:"code"`
+				Type string `xml:"type"` // "SUPPLIER", "EMPLOYEE", etc.
+			} `xml:"employee"`
+		}
+		if xmlErr := xml.Unmarshal(data, &xmlResp); xmlErr == nil {
+			result := make(map[string]string, len(xmlResp.Employees))
+			for _, e := range xmlResp.Employees {
+				if e.Name != "" {
+					result[e.ID] = e.Name
+				}
+			}
+			if len(result) > 0 {
+				return result, nil
+			}
+		}
+	}
+
+	// Fallback to JSON v2 endpoint
+	data, err = c.doGet(ctx, "/resto/api/v2/entities/suppliers/list", nil)
 	if err != nil {
 		return nil, fmt.Errorf("get suppliers: %w", err)
 	}

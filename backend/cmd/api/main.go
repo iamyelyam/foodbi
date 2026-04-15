@@ -9,21 +9,23 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/foodbi/backend/internal/ai"
 	"github.com/foodbi/backend/internal/auth"
 	"github.com/foodbi/backend/internal/dashboard"
 	"github.com/foodbi/backend/internal/database"
+	"github.com/foodbi/backend/internal/employees"
+	"github.com/foodbi/backend/internal/files"
 	"github.com/foodbi/backend/internal/locations"
 	"github.com/foodbi/backend/internal/middleware"
+	"github.com/foodbi/backend/internal/notifications"
+	"github.com/foodbi/backend/internal/payments"
+	"github.com/foodbi/backend/internal/profiles"
 	"github.com/foodbi/backend/internal/purchases"
 	"github.com/foodbi/backend/internal/revenue"
 	"github.com/foodbi/backend/internal/statistics"
-	"github.com/foodbi/backend/internal/ai"
-	"github.com/foodbi/backend/internal/employees"
-	"github.com/foodbi/backend/internal/files"
-	"github.com/foodbi/backend/internal/notifications"
-	"github.com/foodbi/backend/internal/profiles"
 	"github.com/foodbi/backend/internal/stock"
 	"github.com/foodbi/backend/internal/supplying"
+	"github.com/foodbi/backend/internal/telegram"
 	"github.com/foodbi/backend/internal/transfers"
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
@@ -47,6 +49,25 @@ func main() {
 	}
 	defer db.Close()
 
+	// Auto-apply pending migrations on startup
+	migrationsDir := os.Getenv("MIGRATIONS_DIR")
+	if migrationsDir == "" {
+		migrationsDir = "./migrations"
+	}
+	if err := database.RunMigrations(context.Background(), db, migrationsDir); err != nil {
+		log.Warn().Err(err).Msg("migration: runner failed — continuing to serve")
+	}
+
+	// Telegram bot (start if token configured)
+	botCtx, botCancel := context.WithCancel(context.Background())
+	var tgBot *telegram.Bot
+	if token := os.Getenv("TELEGRAM_BOT_TOKEN"); token != "" {
+		tgBot = telegram.NewBot(token, db)
+		go tgBot.Start(botCtx)
+	} else {
+		log.Warn().Msg("TELEGRAM_BOT_TOKEN not set — telegram bot disabled")
+	}
+
 	authService := auth.NewService(db)
 	authHandler := auth.NewHandler(authService)
 	locHandler := locations.NewHandler(db)
@@ -62,6 +83,7 @@ func main() {
 	notifHandler := notifications.NewHandler(db)
 	aiHandler := ai.NewHandler(db)
 	fileHandler := files.NewHandler(db)
+	paymentHandler := payments.NewHandler(db, tgBot)
 
 	r := chi.NewRouter()
 
@@ -86,6 +108,9 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, `{"status":"ok","time":"%s"}`, time.Now().UTC().Format(time.RFC3339))
 	})
+
+	// Webhook endpoints (no JWT auth — use HMAC signature per company)
+	r.Post("/api/v1/webhooks/payment/{companyID}", paymentHandler.HandleWebhook)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
@@ -147,10 +172,12 @@ func main() {
 	<-quit
 
 	log.Info().Msg("shutting down server")
+	botCancel() // stop telegram bot
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Fatal().Err(err).Msg("server forced shutdown")
 	}
+	paymentHandler.Stop() // drain telegram notify worker pool
 	log.Info().Msg("server stopped")
 }

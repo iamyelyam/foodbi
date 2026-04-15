@@ -1,42 +1,80 @@
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useState, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { CardSkeleton } from '@/components/ui/skeleton'
 import { Header } from '@/components/layout/Header'
 import { Tabbar } from '@/components/layout/Tabbar'
-import { SegmentedControl } from '@/components/ui/segmented-control'
 import { BottomSheet } from '@/components/layout/BottomSheet'
-import { Button } from '@/components/ui/button'
-import { DatePicker } from '@/components/ui/date-picker'
-import { FilterChip } from '@/components/ui/filter-chip'
+import { DateRangePicker } from '@/components/ui/date-range-picker'
 import { usePurchases, useSuppliers, useUnreadNotificationCount } from '@/hooks/useApi'
-import { Filter, ChevronRight, Building2, Check, Receipt } from 'lucide-react'
+import { Filter, ChevronRight, Calendar, Coins, Receipt, ScanLine, Pencil, Check, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
+import { formatProductName, formatSupplierName } from '@/lib/format'
 import { useCurrency } from '@/stores/app'
 import { useT } from '@/i18n'
 
-type Tab = 'invoices' | 'suppliers'
+function formatDay(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00')
+  return d.toLocaleDateString('en', { month: 'long', day: 'numeric' })
+}
+function todayIso(): string {
+  return new Date().toISOString().split('T')[0]
+}
+function isoDaysAgo(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() - days)
+  return d.toISOString().split('T')[0]
+}
+const formatMoney = (v: number) => v.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })
 
 export function PurchasesPage() {
   const cs = useCurrency()
   const t = useT()
-  const [tab, setTab] = useState<Tab>('invoices')
+  const navigate = useNavigate()
+
+  // Purchases happen less often than orders — default to last 30 days.
+  const [dateFrom, setDateFrom] = useState<string>(isoDaysAgo(30))
+  const [dateTo, setDateTo] = useState<string>(todayIso())
+  const [showRangePicker, setShowRangePicker] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
-  const [filters, setFilters] = useState<Record<string, string>>({})
-  const [selectedSupplier, setSelectedSupplier] = useState<any>(null)
-  const [pickingDate, setPickingDate] = useState<'from' | 'to' | null>(null)
+  const [suppliersFilter, setSuppliersFilter] = useState<Set<string>>(new Set())
   const [selectedPurchaseId, setSelectedPurchaseId] = useState<string | null>(null)
+  const [editingSupplier, setEditingSupplier] = useState<string | null>(null)
+  const [aliasDraft, setAliasDraft] = useState<string>('')
+  const queryClient = useQueryClient()
 
-  const { data: purchasesData, isLoading: purchasesLoading } = usePurchases(filters)
-  const { data: suppliers = [], isLoading: suppliersLoading } = useSuppliers()
+  const aliasMutation = useMutation({
+    mutationFn: ({ supplierId, displayName }: { supplierId: string; displayName: string }) =>
+      api.put(`/purchases/suppliers/${supplierId}/alias`, { display_name: displayName }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['purchases'] })
+      queryClient.invalidateQueries({ queryKey: ['purchase-detail'] })
+      queryClient.invalidateQueries({ queryKey: ['suppliers'] })
+      setEditingSupplier(null)
+    },
+  })
 
+  const { data: purchasesData, isLoading: purchasesLoading } = usePurchases({
+    date_from: dateFrom,
+    date_to: dateTo,
+  })
+  const { data: suppliers = [] } = useSuppliers()
   const { data: unreadCount = 0 } = useUnreadNotificationCount()
-  const hasActiveFilters = filters.date_from || filters.date_to || filters.supplier_id
-  const selectedSupplierName = filters.supplier_id
-    ? suppliers.find((s: any) => String(s.supplier_id) === filters.supplier_id)?.supplier_name
-    : null
 
-  const purchases = purchasesData?.purchases ?? []
+  const rawPurchases = purchasesData?.purchases ?? []
+
+  const purchases = useMemo(() => {
+    if (suppliersFilter.size === 0) return rawPurchases
+    return (rawPurchases as any[]).filter((p: any) =>
+      suppliersFilter.has(String(p.supplier_name || ''))
+    )
+  }, [rawPurchases, suppliersFilter])
+
+  const totals = useMemo(() => {
+    const sum = (purchases as any[]).reduce((s: number, p: any) => s + (p.total_sum || 0), 0)
+    return { sum, count: purchases.length }
+  }, [purchases])
 
   const { data: purchaseDetail } = useQuery({
     queryKey: ['purchase-detail', selectedPurchaseId],
@@ -44,271 +82,313 @@ export function PurchasesPage() {
     enabled: !!selectedPurchaseId,
   })
 
+  const rangeLabel = `${formatDay(dateFrom)} - ${formatDay(dateTo)}`
+
   return (
-    <div className="flex flex-col min-h-dvh bg-bg">
-      <Header title={t('purchases.title')} showBack showNotification badgeCount={unreadCount} />
+    <div className="flex flex-col min-h-dvh bg-white">
+      <Header title={t('purchases.title') || 'Purchases'} showBack showNotification badgeCount={unreadCount} />
 
+      {/* Date range */}
       <div className="px-4 pt-2 pb-3">
-        <SegmentedControl
-          value={tab}
-          onChange={setTab}
-          options={[
-            { value: 'invoices', label: t('purchases.invoices') },
-            { value: 'suppliers', label: t('purchases.suppliers') },
-          ]}
-        />
+        <button
+          onClick={() => setShowRangePicker(true)}
+          className="flex items-center gap-2 text-sm font-medium text-dark"
+        >
+          <Calendar className="h-4 w-4 text-gray" />
+          <span>{rangeLabel}</span>
+          <ChevronRight className="h-4 w-4 text-gray" />
+        </button>
       </div>
 
-      <div className="px-4 pb-3 flex items-center justify-between">
-        <span className="text-xs text-gray">
-          {tab === 'invoices' ? `${purchasesData?.total ?? 0} invoices` : `${suppliers.length} suppliers`}
-        </span>
-        {tab === 'invoices' && (
-          <button onClick={() => setShowFilters(true)} className="flex items-center gap-1 text-xs font-medium text-primary">
-            <Filter className="h-3.5 w-3.5" /> {t('common.filter')}
-          </button>
-        )}
-      </div>
-
-      {/* Active filter pills */}
-      {tab === 'invoices' && hasActiveFilters && (
-        <div className="px-4 pb-3 flex flex-wrap gap-2">
-          {filters.date_from && (
-            <FilterChip
-              label={`From: ${filters.date_from}`}
-              onRemove={() => setFilters((f) => { const { date_from, ...rest } = f; return rest })}
-            />
-          )}
-          {filters.date_to && (
-            <FilterChip
-              label={`To: ${filters.date_to}`}
-              onRemove={() => setFilters((f) => { const { date_to, ...rest } = f; return rest })}
-            />
-          )}
-          {selectedSupplierName && (
-            <FilterChip
-              label={`Supplier: ${selectedSupplierName}`}
-              onRemove={() => setFilters((f) => { const { supplier_id, ...rest } = f; return rest })}
-            />
-          )}
+      {/* 2 metric cards */}
+      <div className="px-4 pb-3">
+        <div className="grid grid-cols-2 gap-2">
+          <MetricCard
+            icon={<Coins className="h-4 w-4 text-primary" />}
+            value={formatMoney(totals.sum) + cs}
+            label="Purchases"
+          />
+          <MetricCard
+            icon={<Receipt className="h-4 w-4 text-primary" />}
+            value={String(totals.count)}
+            label="Invoices"
+          />
         </div>
-      )}
+      </div>
 
-      <main className="flex-1 px-4 pb-20 space-y-2">
-        {(tab === 'invoices' ? purchasesLoading : suppliersLoading) ? (
-          <>
+      {/* Filters + Scan a file action */}
+      <div className="px-4 pb-3 flex items-center gap-3">
+        <button
+          onClick={() => setShowFilters(true)}
+          className="flex flex-col items-center gap-0.5 shrink-0"
+          aria-label="Filters"
+        >
+          <Filter className="h-5 w-5 text-dark" />
+          <span className="text-[10px] text-gray">Filters</span>
+        </button>
+        <button
+          onClick={() => navigate('/file-upload')}
+          className="flex-1 flex items-center justify-center gap-2 bg-primary text-dark font-semibold py-3 rounded-full"
+        >
+          <ScanLine className="h-4 w-4" />
+          Scan a file
+        </button>
+      </div>
+
+      <main className="flex-1 px-4 pb-20">
+        {purchasesLoading ? (
+          <div className="space-y-2">
             <CardSkeleton />
             <CardSkeleton />
             <CardSkeleton />
-          </>
+          </div>
         ) : (
-        <>
-        {tab === 'invoices' &&
-          purchases.map((p: any) => (
-            <button key={p.id} onClick={() => setSelectedPurchaseId(p.id)} className="bg-white rounded-[12px] p-4 shadow-sm w-full text-left">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-dark">{p.supplier_name || 'Unknown'}</p>
-                  <p className="text-xs text-gray mt-0.5">
-                    #{p.document_number} - {new Date(p.incoming_date).toLocaleDateString()}
+          <div className="divide-y divide-bg-alt">
+            {(purchases as any[]).map((p: any) => (
+              <button
+                key={p.id}
+                onClick={() => setSelectedPurchaseId(p.id)}
+                className="w-full text-left py-3"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 min-w-0 mr-3">
+                    <p className="text-sm font-semibold text-dark truncate">
+                      {formatSupplierName(p.supplier_name)}
+                    </p>
+                    <p className="text-xs text-gray mt-0.5">
+                      {new Date(p.incoming_date).toLocaleDateString('ru-RU')}
+                    </p>
+                  </div>
+                  <p className="text-sm font-bold text-dark shrink-0">
+                    {formatMoney(p.total_sum)}{cs}
                   </p>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm font-semibold text-dark">{p.total_sum.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</p>
-                  <span className={cn(
-                    'text-xs px-2 py-0.5 rounded-full',
-                    p.status === 'processed' ? 'bg-success/10 text-success' : 'bg-bg-alt text-gray'
-                  )}>
-                    {p.status || 'pending'}
-                  </span>
-                </div>
+              </button>
+            ))}
+            {purchases.length === 0 && (
+              <div className="text-center py-12">
+                <Receipt className="h-12 w-12 text-gray-light mx-auto mb-3" />
+                <p className="text-sm text-gray">No invoices for this period</p>
               </div>
-            </button>
-          ))}
-
-        {tab === 'suppliers' &&
-          suppliers.map((s: any) => (
-            <button
-              key={s.supplier_id}
-              onClick={() => setSelectedSupplier(s)}
-              className="bg-white rounded-[12px] p-4 shadow-sm w-full text-left"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-primary-lighter flex items-center justify-center">
-                    <Building2 className="h-5 w-5 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-dark">{s.supplier_name}</p>
-                    <p className="text-xs text-gray mt-0.5">{s.invoice_count} invoices</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-semibold text-dark">{s.total_sum.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</p>
-                  <ChevronRight className="h-4 w-4 text-gray-light" />
-                </div>
-              </div>
-            </button>
-          ))}
-
-        {((tab === 'invoices' && purchases.length === 0) || (tab === 'suppliers' && suppliers.length === 0)) && (
-          <div className="text-center py-12">
-            <Receipt className="h-12 w-12 text-gray-light mx-auto mb-3" />
-            <p className="text-sm text-gray">No {tab} yet</p>
+            )}
           </div>
-        )}
-        </>
         )}
       </main>
 
       <Tabbar />
 
       {/* Purchase detail sheet */}
-      <BottomSheet isOpen={!!selectedPurchaseId} onClose={() => setSelectedPurchaseId(null)} title="Purchase Detail">
+      <BottomSheet
+        isOpen={!!selectedPurchaseId}
+        onClose={() => setSelectedPurchaseId(null)}
+      >
         {purchaseDetail && (
           <div className="space-y-4">
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray">Supplier</span>
-                <span className="font-semibold text-dark">{purchaseDetail.supplier_name || 'Unknown'}</span>
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                {editingSupplier === purchaseDetail.supplier_id ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      autoFocus
+                      value={aliasDraft}
+                      onChange={(e) => setAliasDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          aliasMutation.mutate({
+                            supplierId: purchaseDetail.supplier_id,
+                            displayName: aliasDraft,
+                          })
+                        } else if (e.key === 'Escape') {
+                          setEditingSupplier(null)
+                        }
+                      }}
+                      placeholder="Supplier name"
+                      className="flex-1 min-w-0 bg-bg rounded-[10px] px-3 py-2 text-base font-bold text-dark outline-none border border-primary"
+                    />
+                    <button
+                      onClick={() =>
+                        aliasMutation.mutate({
+                          supplierId: purchaseDetail.supplier_id,
+                          displayName: aliasDraft,
+                        })
+                      }
+                      disabled={aliasMutation.isPending}
+                      className="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0"
+                    >
+                      <Check className="h-4 w-4 text-dark" />
+                    </button>
+                    <button
+                      onClick={() => setEditingSupplier(null)}
+                      className="w-8 h-8 rounded-full bg-bg flex items-center justify-center shrink-0"
+                    >
+                      <X className="h-4 w-4 text-gray" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <p className="text-lg font-bold text-dark truncate">
+                      {formatSupplierName(purchaseDetail.supplier_name)}
+                    </p>
+                    {purchaseDetail.supplier_id && (
+                      <button
+                        onClick={() => {
+                          setEditingSupplier(purchaseDetail.supplier_id)
+                          // Pre-fill with current name if it's not a UUID
+                          const current = purchaseDetail.supplier_name || ''
+                          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(current)
+                          setAliasDraft(isUuid ? '' : current)
+                        }}
+                        className="w-7 h-7 rounded-full bg-bg flex items-center justify-center shrink-0 active:opacity-70"
+                        aria-label="Edit supplier name"
+                      >
+                        <Pencil className="h-3.5 w-3.5 text-gray" />
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray">Document #</span>
-                <span className="font-semibold text-dark">#{purchaseDetail.document_number}</span>
+              <p className="text-sm text-gray shrink-0 pt-2">
+                {new Date(purchaseDetail.incoming_date).toLocaleDateString('ru-RU')}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-bg rounded-[12px] p-3">
+                <p className="text-sm font-bold text-dark">
+                  {formatMoney(purchaseDetail.total_sum || 0)}{cs}
+                </p>
+                <p className="text-[10px] text-gray mt-0.5">Total</p>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray">Date</span>
-                <span className="font-semibold text-dark">{new Date(purchaseDetail.incoming_date).toLocaleDateString()}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray">Total</span>
-                <span className="font-semibold text-dark">{purchaseDetail.total_sum?.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</span>
+              <div className="bg-bg rounded-[12px] p-3">
+                <p className="text-sm font-bold text-dark">
+                  #{purchaseDetail.document_number || '—'}
+                </p>
+                <p className="text-[10px] text-gray mt-0.5">Document</p>
               </div>
             </div>
 
-            <div className="border-t border-bg-alt pt-3">
-              <p className="text-sm font-semibold text-dark mb-2">Line Items</p>
-              {purchaseDetail.line_items && purchaseDetail.line_items.length > 0 ? (
-                <div className="space-y-2">
-                  {purchaseDetail.line_items.map((item: any, idx: number) => (
-                    <div key={idx} className="bg-bg rounded-[12px] p-3">
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium text-dark">{item.product_name}</p>
-                        <p className="text-sm font-semibold text-dark">{item.subtotal?.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</p>
-                      </div>
+            {purchaseDetail.line_items && purchaseDetail.line_items.length > 0 ? (
+              <div className="divide-y divide-bg-alt">
+                {purchaseDetail.line_items.map((item: any, idx: number) => (
+                  <div key={idx} className="flex items-center justify-between py-3">
+                    <div className="flex-1 min-w-0 mr-3">
+                      <p className="text-sm font-semibold text-dark truncate">
+                        {formatProductName(item.product_name)}
+                      </p>
                       <p className="text-xs text-gray mt-0.5">
-                        {item.quantity} {item.unit} x {item.price?.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}
+                        {item.quantity} {item.unit} × {formatMoney(item.price || 0)}{cs}
                       </p>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-gray text-center py-4">No line items available</p>
-              )}
-            </div>
-          </div>
-        )}
-      </BottomSheet>
+                    <p className="text-sm font-bold text-dark shrink-0">
+                      {formatMoney(item.subtotal || 0)}{cs}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray text-center py-4">No line items</p>
+            )}
 
-      {/* Supplier detail sheet */}
-      <BottomSheet isOpen={!!selectedSupplier} onClose={() => setSelectedSupplier(null)} title={selectedSupplier?.supplier_name}>
-        {selectedSupplier && (
-          <div className="space-y-3">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray">Total purchases</span>
-              <span className="font-semibold">{selectedSupplier.total_sum.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray">Invoices</span>
-              <span className="font-semibold">{selectedSupplier.invoice_count}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray">Last invoice</span>
-              <span className="font-semibold">{selectedSupplier.last_invoice}</span>
-            </div>
+            <button
+              onClick={() => setSelectedPurchaseId(null)}
+              className="w-full text-center text-primary font-semibold py-2"
+            >
+              Back
+            </button>
           </div>
         )}
       </BottomSheet>
 
       {/* Filters sheet */}
-      <BottomSheet isOpen={showFilters} onClose={() => { setShowFilters(false); setPickingDate(null) }} title="Filters">
-        <div className="space-y-4">
-          {/* Date from */}
+      <BottomSheet isOpen={showFilters} onClose={() => setShowFilters(false)}>
+        <div className="space-y-5">
           <div>
-            <label className="text-xs font-medium text-gray mb-1 block">Date from</label>
-            <button
-              onClick={() => setPickingDate(pickingDate === 'from' ? null : 'from')}
-              className="w-full h-12 rounded-[12px] border border-bg-alt px-4 text-left text-sm text-dark"
-            >
-              {filters.date_from || 'Select date'}
-            </button>
-            {pickingDate === 'from' && (
-              <div className="mt-2">
-                <DatePicker
-                  value={filters.date_from}
-                  onChange={(date) => { setFilters((f) => ({ ...f, date_from: date })); setPickingDate(null) }}
-                  onClose={() => setPickingDate(null)}
-                />
+            <p className="text-base font-bold text-dark mb-3">Supplier</p>
+            {suppliers.length === 0 ? (
+              <p className="text-xs text-gray">No suppliers loaded</p>
+            ) : (
+              <div className="flex flex-wrap gap-2 max-h-60 overflow-y-auto">
+                {(suppliers as any[]).map((s: any) => {
+                  const name = s.supplier_name as string
+                  const active = suppliersFilter.has(name)
+                  return (
+                    <button
+                      key={s.supplier_id}
+                      onClick={() => {
+                        setSuppliersFilter((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(name)) next.delete(name)
+                          else next.add(name)
+                          return next
+                        })
+                      }}
+                      className={cn(
+                        'px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
+                        active
+                          ? 'bg-primary-lighter text-dark border border-primary'
+                          : 'bg-bg text-dark'
+                      )}
+                    >
+                      {formatProductName(name)}
+                    </button>
+                  )
+                })}
               </div>
             )}
           </div>
 
-          {/* Date to */}
-          <div>
-            <label className="text-xs font-medium text-gray mb-1 block">Date to</label>
-            <button
-              onClick={() => setPickingDate(pickingDate === 'to' ? null : 'to')}
-              className="w-full h-12 rounded-[12px] border border-bg-alt px-4 text-left text-sm text-dark"
-            >
-              {filters.date_to || 'Select date'}
-            </button>
-            {pickingDate === 'to' && (
-              <div className="mt-2">
-                <DatePicker
-                  value={filters.date_to}
-                  onChange={(date) => { setFilters((f) => ({ ...f, date_to: date })); setPickingDate(null) }}
-                  onClose={() => setPickingDate(null)}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Supplier filter */}
-          <div>
-            <label className="text-xs font-medium text-gray mb-2 block">Supplier</label>
-            <div className="max-h-40 overflow-y-auto space-y-1 rounded-[12px] border border-bg-alt p-2">
-              <button
-                onClick={() => setFilters((f) => { const { supplier_id, ...rest } = f; return rest })}
-                className={cn(
-                  'w-full flex items-center justify-between px-3 py-2 rounded-[8px] text-sm transition-colors',
-                  !filters.supplier_id ? 'bg-primary/10 text-primary font-medium' : 'text-dark'
-                )}
-              >
-                All suppliers
-                {!filters.supplier_id && <Check className="h-4 w-4" />}
-              </button>
-              {suppliers.map((s: any) => (
-                <button
-                  key={s.supplier_id}
-                  onClick={() => setFilters((f) => ({ ...f, supplier_id: String(s.supplier_id) }))}
-                  className={cn(
-                    'w-full flex items-center justify-between px-3 py-2 rounded-[8px] text-sm transition-colors',
-                    filters.supplier_id === String(s.supplier_id) ? 'bg-primary/10 text-primary font-medium' : 'text-dark'
-                  )}
-                >
-                  {s.supplier_name}
-                  {filters.supplier_id === String(s.supplier_id) && <Check className="h-4 w-4" />}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex gap-3">
-            <Button variant="secondary" fullWidth onClick={() => { setFilters({}); setShowFilters(false); setPickingDate(null) }}>{t('common.clear')}</Button>
-            <Button fullWidth onClick={() => { setShowFilters(false); setPickingDate(null) }}>{t('common.apply')}</Button>
-          </div>
+          <button
+            onClick={() => setShowFilters(false)}
+            className="w-full bg-primary text-dark font-bold py-3 rounded-full"
+          >
+            Show {purchases.length} results
+          </button>
+          <button
+            onClick={() => setShowFilters(false)}
+            className="w-full text-center text-primary font-semibold"
+          >
+            Back
+          </button>
         </div>
       </BottomSheet>
+
+      {/* Date range picker — last so it stacks above */}
+      <BottomSheet
+        isOpen={showRangePicker}
+        onClose={() => setShowRangePicker(false)}
+        title="Select period"
+      >
+        <DateRangePicker
+          startDate={dateFrom}
+          endDate={dateTo}
+          onConfirm={(start, end) => {
+            setDateFrom(start)
+            setDateTo(end)
+            setShowRangePicker(false)
+          }}
+          onBack={() => setShowRangePicker(false)}
+        />
+      </BottomSheet>
+    </div>
+  )
+}
+
+function MetricCard({
+  icon,
+  value,
+  label,
+}: {
+  icon: React.ReactNode
+  value: string
+  label: string
+}) {
+  return (
+    <div className="bg-bg rounded-[12px] p-2">
+      <div className="w-6 h-6 rounded-full bg-primary-lighter flex items-center justify-center mb-1">
+        {icon}
+      </div>
+      <p className="text-sm font-bold text-dark leading-tight truncate">{value}</p>
+      <p className="text-[10px] text-gray mt-0.5">{label}</p>
     </div>
   )
 }

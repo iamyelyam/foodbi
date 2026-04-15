@@ -3,6 +3,7 @@ package dashboard
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/foodbi/backend/internal/middleware"
@@ -175,20 +176,22 @@ type TrendPoint struct {
 	Date    string  `json:"date"`
 	Revenue float64 `json:"revenue"`
 	Orders  int     `json:"orders"`
+	Items   int     `json:"items"`
 }
 
 func (h *Handler) RevenueTrend(w http.ResponseWriter, r *http.Request) {
 	companyID := middleware.GetCompanyID(r.Context())
 	locationID := r.URL.Query().Get("location_id")
 	days := 7
-
-	if r.URL.Query().Get("days") == "30" {
-		days = 30
+	if d := r.URL.Query().Get("days"); d != "" {
+		if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 && parsed <= 365 {
+			days = parsed
+		}
 	}
 
 	dateFrom := time.Now().AddDate(0, 0, -days).Truncate(24 * time.Hour)
 
-	query := `SELECT DATE(order_date) as day, COALESCE(SUM(revenue), 0), COALESCE(COUNT(*), 0)
+	query := `SELECT DATE(order_date) as day, COALESCE(SUM(revenue), 0), COALESCE(COUNT(*), 0), COALESCE(SUM(item_count), 0)
 		FROM revenue_facts WHERE company_id = $1 AND order_date >= $2`
 	args := []interface{}{companyID, dateFrom}
 
@@ -209,7 +212,7 @@ func (h *Handler) RevenueTrend(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var p TrendPoint
 		var day time.Time
-		if err := rows.Scan(&day, &p.Revenue, &p.Orders); err != nil {
+		if err := rows.Scan(&day, &p.Revenue, &p.Orders, &p.Items); err != nil {
 			continue
 		}
 		p.Date = day.Format("2006-01-02")

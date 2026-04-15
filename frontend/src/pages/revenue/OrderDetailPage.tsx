@@ -7,6 +7,7 @@ import { BottomSheet } from '@/components/layout/BottomSheet'
 import { ListItemSkeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
+import { formatProductName } from '@/lib/format'
 import { useAuthStore } from '@/stores/auth'
 import { useCurrency } from '@/stores/app'
 
@@ -114,7 +115,7 @@ export function OrderDetailPage() {
                   {order.items.map((item: any, idx: number) => (
                     <div key={idx} className="flex items-center justify-between px-4 py-3">
                       <div className="flex-1 min-w-0 mr-3">
-                        <p className="text-sm font-medium text-dark truncate">{item.product_name || item.name}</p>
+                        <p className="text-sm font-medium text-dark truncate">{formatProductName(item.product_name || item.name)}</p>
                         <p className="text-xs text-gray">
                           {item.quantity} × {item.price?.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}
                         </p>

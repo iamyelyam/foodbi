@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/foodbi/backend/internal/iiko"
@@ -105,9 +106,73 @@ func GetFloat(row map[string]interface{}, key string) float64 {
 type OrderAgg struct {
 	OrderDate   string
 	OrderNumber string
+	OrderType   string // normalized: "delivery" / "takeaway" / "dine-in"
+	WaiterName  string
 	Revenue     float64
 	Discount    float64
 	ItemCount   int
+}
+
+// Known iiko system measure-unit GUIDs. These are stable across tenants.
+var KnownUnitGUIDs = map[string]string{
+	"7ba81c3a-8de5-8f9d-fb9f-e39efcbc57cc": "шт",
+	"6040d92d-e286-f4f9-a613-ed0e6fd241e1": "кг",
+	"cd19b5ea-1b32-a6e5-1df7-5d2784a0549a": "л",
+	"69859c74-db72-b006-cba5-326cf6f4fc6e": "гр",
+}
+
+// guessUnitFromName looks for suffix hints in a product name (КГ/ГР/МЛ/Л/ШТ).
+func guessUnitFromName(name string) string {
+	upper := strings.ToUpper(name)
+	if strings.Contains(upper, " КГ") || strings.HasSuffix(upper, "КГ") {
+		return "кг"
+	}
+	if strings.Contains(upper, " ГР") || strings.HasSuffix(upper, "ГР") {
+		return "гр"
+	}
+	if strings.Contains(upper, " МЛ") || strings.HasSuffix(upper, "МЛ") {
+		return "мл"
+	}
+	if strings.HasSuffix(upper, " Л") || strings.Contains(upper, " Л ") {
+		return "л"
+	}
+	return ""
+}
+
+// ResolveUnit turns an iiko unit GUID (or empty) into a human-readable unit string.
+// Priority: iiko measure-unit map → known system GUIDs → guess from product name → "шт".
+func ResolveUnit(rawUnit, productName string, measureUnits map[string]string) string {
+	u := rawUnit
+	if u != "" && measureUnits != nil {
+		if n, ok := measureUnits[u]; ok && n != "" {
+			return n
+		}
+	}
+	if len(u) > 30 { // still looks like a GUID
+		if n, ok := KnownUnitGUIDs[u]; ok {
+			return n
+		}
+	}
+	if u != "" && len(u) <= 30 {
+		return u // already a short readable unit
+	}
+	if n := guessUnitFromName(productName); n != "" {
+		return n
+	}
+	return "шт"
+}
+
+// NormalizeOrderType maps iiko OrderServiceType to our 3 canonical values.
+func NormalizeOrderType(raw string) string {
+	switch raw {
+	case "DeliveryByCourier", "DeliveryByClient", "Delivery":
+		return "delivery"
+	case "Common":
+		return "takeaway"
+	default:
+		// DineIn, empty, or unknown → default to dine-in
+		return "dine-in"
+	}
 }
 
 // AggregateOrdersFromOLAP takes per-dish OLAP rows and aggregates them into per-order totals.
@@ -132,6 +197,8 @@ func AggregateOrdersFromOLAP(rows []map[string]interface{}) map[string]*OrderAgg
 			agg = &OrderAgg{
 				OrderDate:   GetString(row, "OpenDate.Typed"),
 				OrderNumber: orderNum,
+				OrderType:   NormalizeOrderType(GetString(row, "OrderServiceType")),
+				WaiterName:  GetString(row, "WaiterName"),
 			}
 			orders[orderID] = agg
 		}
@@ -160,7 +227,7 @@ func (s *Service) SyncRevenue(ctx context.Context, client *iiko.Client, companyI
 	// iiko returns DishSumInt per-dish; we SUM them per order in Go.
 	report, err := client.GetOLAPReport(ctx, iiko.OLAPReportRequest{
 		ReportType:       "SALES",
-		GroupByRowFields: []string{"UniqOrderId.Id", "OrderNum", "OpenDate.Typed", "DishName"},
+		GroupByRowFields: []string{"UniqOrderId.Id", "OrderNum", "OrderServiceType", "WaiterName", "OpenDate.Typed", "DishName"},
 		GroupByColFields: []string{},
 		AggregateFields:  []string{"DishDiscountSumInt", "DishSumInt", "DishAmountInt"},
 		Filters: map[string]interface{}{
@@ -207,7 +274,15 @@ func (s *Service) SyncRevenue(ctx context.Context, client *iiko.Client, companyI
 
 	// Phase 2: upsert aggregated order totals
 	count := 0
+	debugN := 0
 	for orderID, agg := range orders {
+		if debugN < 5 {
+			log.Info().Str("order_id", orderID).Str("order_num", agg.OrderNumber).
+				Float64("revenue", agg.Revenue).Float64("discount", agg.Discount).
+				Int("items", agg.ItemCount).Str("date", agg.OrderDate).
+				Msg("sync: DEBUG upsert sample")
+			debugN++
+		}
 		parsedDate, _ := time.Parse("2006-01-02", agg.OrderDate)
 		if parsedDate.IsZero() {
 			parsedDate = time.Now()
@@ -219,7 +294,7 @@ func (s *Service) SyncRevenue(ctx context.Context, client *iiko.Client, companyI
 			 ON CONFLICT (company_id, iiko_order_id) DO UPDATE SET
 			   revenue = EXCLUDED.revenue, discount = EXCLUDED.discount, status = EXCLUDED.status,
 			   waiter_name = EXCLUDED.waiter_name, item_count = EXCLUDED.item_count, order_number = EXCLUDED.order_number, synced_at = NOW()`,
-			companyID, locationID, orderID, agg.OrderNumber, parsedDate, agg.Revenue, agg.Discount, "dine-in", "closed", "", agg.ItemCount)
+			companyID, locationID, orderID, agg.OrderNumber, parsedDate, agg.Revenue, agg.Discount, agg.OrderType, "closed", agg.WaiterName, agg.ItemCount)
 		if err != nil {
 			log.Warn().Err(err).Str("order_id", orderID).Msg("sync: failed to upsert revenue")
 			continue
@@ -247,7 +322,7 @@ func (s *Service) SyncProductSales(ctx context.Context, client *iiko.Client, com
 		ReportType:       "SALES",
 		GroupByRowFields: []string{"DishName", "DishGroup", "DishCategory", "UniqOrderId.Id", "OpenDate.Typed"},
 		GroupByColFields: []string{},
-		AggregateFields:  []string{"DishAmountInt", "DishSumInt", "DishDiscountSumInt"},
+		AggregateFields:  []string{"DishAmountInt", "DishSumInt", "DishDiscountSumInt", "ProductCostBase.ProductCost"},
 		Filters: map[string]interface{}{
 			"OpenDate.Typed": map[string]interface{}{
 				"filterType": "DateRange",
@@ -277,7 +352,8 @@ func (s *Service) SyncProductSales(ctx context.Context, client *iiko.Client, com
 		saleDate := GetString(row, "OpenDate.Typed")
 		quantity := GetFloat(row, "DishAmountInt")
 		revenue := GetFloat(row, "DishSumInt")
-		discount := GetFloat(row, "DishDiscountSumInt")
+		costPrice := GetFloat(row, "ProductCostBase.ProductCost")
+		_ = GetFloat(row, "DishDiscountSumInt") // discount not stored in product_sales_facts
 
 		// Generate stable product ID from name
 		h := sha256.Sum256([]byte(dishName))
@@ -293,7 +369,7 @@ func (s *Service) SyncProductSales(ctx context.Context, client *iiko.Client, com
 			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
 			 ON CONFLICT (company_id, iiko_product_id, sale_date, order_id) DO UPDATE SET
 			   quantity = EXCLUDED.quantity, revenue = EXCLUDED.revenue, cost_price = EXCLUDED.cost_price, synced_at = NOW()`,
-			companyID, locationID, productID, dishName, category, parsedDate, quantity, revenue, discount, orderID)
+			companyID, locationID, productID, dishName, category, parsedDate, quantity, revenue, costPrice, orderID)
 		if err != nil {
 			log.Warn().Err(err).Str("product", dishName).Msg("sync: failed to upsert product sale")
 			continue
@@ -324,27 +400,61 @@ func (s *Service) SyncPurchases(ctx context.Context, client *iiko.Client, compan
 	}
 
 	// Resolve supplier names
-	supplierNames, _ := client.GetSuppliers(ctx)
+	supplierNames, supErr := client.GetSuppliers(ctx)
+	if supErr != nil {
+		log.Warn().Err(supErr).Msg("sync: GetSuppliers failed — invoices will keep supplier UUIDs")
+	}
+
+	// Resolve product names via nomenclature for line items
+	nomenclature, nomErr := client.GetNomenclature(ctx)
+	if nomErr != nil {
+		log.Warn().Err(nomErr).Msg("sync: GetNomenclature failed — line items will show product UUIDs")
+	}
+	measureUnits, _ := client.GetMeasureUnits(ctx)
 
 	count := 0
 	for _, inv := range invoices {
 		supplierName := inv.SupplierName
 		if supplierNames != nil {
-			if name, ok := supplierNames[inv.SupplierID]; ok {
+			if name, ok := supplierNames[inv.SupplierID]; ok && name != "" {
 				supplierName = name
 			}
 		}
 
-		_, err := s.db.Exec(ctx,
+		// Upsert purchase_facts and fetch the row ID to link line items
+		var purchaseRowID uuid.UUID
+		err := s.db.QueryRow(ctx,
 			`INSERT INTO purchase_facts (company_id, location_id, iiko_invoice_id, document_number, supplier_id, supplier_name, incoming_date, status, total_sum, synced_at)
 			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
 			 ON CONFLICT (company_id, iiko_invoice_id) DO UPDATE SET
-			   status = EXCLUDED.status, total_sum = EXCLUDED.total_sum, supplier_name = EXCLUDED.supplier_name, synced_at = NOW()`,
-			companyID, locationID, inv.ID, inv.DocumentNumber, inv.SupplierID, supplierName, inv.IncomingDate, inv.Status, inv.Sum)
+			   status = EXCLUDED.status, total_sum = EXCLUDED.total_sum, supplier_name = EXCLUDED.supplier_name, synced_at = NOW()
+			 RETURNING id`,
+			companyID, locationID, inv.ID, inv.DocumentNumber, inv.SupplierID, supplierName, inv.IncomingDate, inv.Status, inv.Sum).Scan(&purchaseRowID)
 		if err != nil {
 			log.Warn().Err(err).Str("invoice_id", inv.ID).Msg("sync: failed to upsert purchase")
 			continue
 		}
+
+		// Replace line items for this purchase
+		if _, err := s.db.Exec(ctx, `DELETE FROM purchase_line_items WHERE purchase_id = $1`, purchaseRowID); err == nil {
+			for _, item := range inv.Items {
+				// Resolve product name from nomenclature by GUID when possible
+				productName := item.ProductName
+				unit := ""
+				if nomenclature != nil {
+					if info, ok := nomenclature[item.ProductID]; ok && info.Name != "" {
+						productName = info.Name
+						unit = info.Unit
+					}
+				}
+				unit = ResolveUnit(unit, productName, measureUnits)
+				_, _ = s.db.Exec(ctx,
+					`INSERT INTO purchase_line_items (purchase_id, product_code, product_name, unit, quantity, price, subtotal)
+					 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+					purchaseRowID, item.Code, productName, unit, item.Amount, item.Price, item.Sum)
+			}
+		}
+
 		count++
 	}
 
@@ -369,6 +479,12 @@ func (s *Service) SyncStock(ctx context.Context, client *iiko.Client, companyID,
 
 	// Resolve product names from nomenclature
 	nomenclature, _ := client.GetNomenclature(ctx)
+	// Resolve unit GUIDs → readable names ("кг", "л", "шт", etc.)
+	measureUnits, muErr := client.GetMeasureUnits(ctx)
+	if muErr != nil {
+		log.Warn().Err(muErr).Msg("sync: GetMeasureUnits failed — falling back to GUID + name heuristic")
+	}
+
 
 	count := 0
 	for _, item := range items {
@@ -380,6 +496,7 @@ func (s *Service) SyncStock(ctx context.Context, client *iiko.Client, companyID,
 				unit = info.Unit
 			}
 		}
+		unit = ResolveUnit(unit, productName, measureUnits)
 
 		_, err := s.db.Exec(ctx,
 			`INSERT INTO stock_snapshots (company_id, location_id, iiko_product_id, product_name, amount, unit, cost_sum, snapshot_at, synced_at)

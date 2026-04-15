@@ -5,6 +5,7 @@ import { Tabbar } from '@/components/layout/Tabbar'
 import { RevenueChart } from '@/components/charts/RevenueChart'
 import { ListItemSkeleton } from '@/components/ui/skeleton'
 import api from '@/lib/api'
+import { formatProductName } from '@/lib/format'
 import { useCurrency } from '@/stores/app'
 
 export function ProductDetailPage() {
@@ -39,7 +40,7 @@ export function ProductDetailPage() {
 
   return (
     <div className="flex flex-col min-h-dvh bg-bg">
-      <Header title={product?.name || 'Product Details'} showBack />
+      <Header title={product?.name ? formatProductName(product.name) : 'Product Details'} showBack />
       <main className="flex-1 px-4 pt-4 pb-20 space-y-3">
         {isLoading ? (
           <>
@@ -51,10 +52,10 @@ export function ProductDetailPage() {
           <>
             {/* Product header card */}
             <div className="bg-white rounded-[16px] p-4 shadow-sm">
-              <h2 className="text-lg font-bold text-dark">{product?.name || 'Unknown Product'}</h2>
+              <h2 className="text-lg font-bold text-dark">{product?.name ? formatProductName(product.name) : 'Unknown Product'}</h2>
               {product?.category && (
                 <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
-                  {product.category}
+                  {formatProductName(product.category)}
                 </span>
               )}
               <div className="grid grid-cols-2 gap-3 mt-4">

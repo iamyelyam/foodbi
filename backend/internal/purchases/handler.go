@@ -5,6 +5,7 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/foodbi/backend/internal/middleware"
@@ -26,12 +27,14 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/{id}", h.GetPurchase)
 	r.Get("/suppliers", h.ListSuppliers)
 	r.Get("/suppliers/{id}", h.GetSupplier)
+	r.Put("/suppliers/{id}/alias", h.SetSupplierAlias)
 	return r
 }
 
 type Purchase struct {
 	ID             string  `json:"id"`
 	DocumentNumber string  `json:"document_number"`
+	SupplierID     string  `json:"supplier_id"`
 	SupplierName   string  `json:"supplier_name"`
 	IncomingDate   string  `json:"incoming_date"`
 	Status         string  `json:"status"`
@@ -59,37 +62,37 @@ func (h *Handler) ListPurchases(w http.ResponseWriter, r *http.Request) {
 	perPage := 20
 	offset := (page - 1) * perPage
 
-	query := `SELECT id, COALESCE(document_number,''), COALESCE(supplier_name,''), incoming_date, COALESCE(status,''), total_sum
-		FROM purchase_facts WHERE company_id = $1`
+	query := `SELECT pf.id, COALESCE(pf.document_number,''), COALESCE(pf.supplier_id,''),
+		       COALESCE(NULLIF(sa.display_name, ''), pf.supplier_name, ''),
+		       pf.incoming_date, COALESCE(pf.status,''), pf.total_sum
+		FROM purchase_facts pf
+		LEFT JOIN supplier_aliases sa ON sa.company_id = pf.company_id AND sa.iiko_supplier_id = pf.supplier_id
+		WHERE pf.company_id = $1`
 	countQuery := `SELECT COUNT(*) FROM purchase_facts WHERE company_id = $1`
 	args := []interface{}{companyID}
 	argIdx := 2
 
 	if locationID != "" {
-		f := ` AND location_id = $` + strconv.Itoa(argIdx)
-		query += f
-		countQuery += f
+		query += ` AND pf.location_id = $` + strconv.Itoa(argIdx)
+		countQuery += ` AND location_id = $` + strconv.Itoa(argIdx)
 		args = append(args, locationID)
 		argIdx++
 	}
 	if supplierID != "" {
-		f := ` AND supplier_id = $` + strconv.Itoa(argIdx)
-		query += f
-		countQuery += f
+		query += ` AND pf.supplier_id = $` + strconv.Itoa(argIdx)
+		countQuery += ` AND supplier_id = $` + strconv.Itoa(argIdx)
 		args = append(args, supplierID)
 		argIdx++
 	}
 	if dateFrom != "" {
-		f := ` AND incoming_date >= $` + strconv.Itoa(argIdx)
-		query += f
-		countQuery += f
+		query += ` AND pf.incoming_date >= $` + strconv.Itoa(argIdx)
+		countQuery += ` AND incoming_date >= $` + strconv.Itoa(argIdx)
 		args = append(args, dateFrom)
 		argIdx++
 	}
 	if dateTo != "" {
-		f := ` AND incoming_date < ($` + strconv.Itoa(argIdx) + `::date + 1)`
-		query += f
-		countQuery += f
+		query += ` AND pf.incoming_date < ($` + strconv.Itoa(argIdx) + `::date + 1)`
+		countQuery += ` AND incoming_date < ($` + strconv.Itoa(argIdx) + `::date + 1)`
 		args = append(args, dateTo)
 		argIdx++
 	}
@@ -97,7 +100,7 @@ func (h *Handler) ListPurchases(w http.ResponseWriter, r *http.Request) {
 	var total int
 	h.db.QueryRow(r.Context(), countQuery, args...).Scan(&total)
 
-	query += ` ORDER BY incoming_date DESC LIMIT $` + strconv.Itoa(argIdx) + ` OFFSET $` + strconv.Itoa(argIdx+1)
+	query += ` ORDER BY pf.incoming_date DESC LIMIT $` + strconv.Itoa(argIdx) + ` OFFSET $` + strconv.Itoa(argIdx+1)
 	args = append(args, perPage, offset)
 
 	rows, err := h.db.Query(r.Context(), query, args...)
@@ -111,7 +114,7 @@ func (h *Handler) ListPurchases(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var p Purchase
 		var d time.Time
-		if err := rows.Scan(&p.ID, &p.DocumentNumber, &p.SupplierName, &d, &p.Status, &p.TotalSum); err != nil {
+		if err := rows.Scan(&p.ID, &p.DocumentNumber, &p.SupplierID, &p.SupplierName, &d, &p.Status, &p.TotalSum); err != nil {
 			continue
 		}
 		p.IncomingDate = d.Format(time.RFC3339)
@@ -130,22 +133,60 @@ func (h *Handler) ListPurchases(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type PurchaseLineItem struct {
+	ProductName string  `json:"product_name"`
+	ProductCode string  `json:"product_code"`
+	Unit        string  `json:"unit"`
+	Quantity    float64 `json:"quantity"`
+	Price       float64 `json:"price"`
+	Subtotal    float64 `json:"subtotal"`
+}
+
+type PurchaseDetail struct {
+	Purchase
+	LineItems []PurchaseLineItem `json:"line_items"`
+}
+
 func (h *Handler) GetPurchase(w http.ResponseWriter, r *http.Request) {
 	companyID := middleware.GetCompanyID(r.Context())
 	id := chi.URLParam(r, "id")
 
-	var p Purchase
+	var detail PurchaseDetail
 	var d time.Time
 	err := h.db.QueryRow(r.Context(),
-		`SELECT id, COALESCE(document_number,''), COALESCE(supplier_name,''), incoming_date, COALESCE(status,''), total_sum
-		 FROM purchase_facts WHERE id = $1 AND company_id = $2`,
-		id, companyID).Scan(&p.ID, &p.DocumentNumber, &p.SupplierName, &d, &p.Status, &p.TotalSum)
+		`SELECT pf.id, COALESCE(pf.document_number,''), COALESCE(pf.supplier_id,''),
+		        COALESCE(NULLIF(sa.display_name, ''), pf.supplier_name, ''),
+		        pf.incoming_date, COALESCE(pf.status,''), pf.total_sum
+		 FROM purchase_facts pf
+		 LEFT JOIN supplier_aliases sa ON sa.company_id = pf.company_id AND sa.iiko_supplier_id = pf.supplier_id
+		 WHERE pf.id = $1 AND pf.company_id = $2`,
+		id, companyID).Scan(&detail.ID, &detail.DocumentNumber, &detail.SupplierID, &detail.SupplierName, &d, &detail.Status, &detail.TotalSum)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "purchase not found")
 		return
 	}
-	p.IncomingDate = d.Format(time.RFC3339)
-	writeJSON(w, http.StatusOK, p)
+	detail.IncomingDate = d.Format(time.RFC3339)
+
+	// Fetch line items linked to this purchase
+	rows, err := h.db.Query(r.Context(),
+		`SELECT COALESCE(product_name,''), COALESCE(product_code,''), COALESCE(unit,''), quantity, price, subtotal
+		 FROM purchase_line_items WHERE purchase_id = $1 ORDER BY created_at`,
+		id)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var li PurchaseLineItem
+			if err := rows.Scan(&li.ProductName, &li.ProductCode, &li.Unit, &li.Quantity, &li.Price, &li.Subtotal); err != nil {
+				continue
+			}
+			detail.LineItems = append(detail.LineItems, li)
+		}
+	}
+	if detail.LineItems == nil {
+		detail.LineItems = []PurchaseLineItem{}
+	}
+
+	writeJSON(w, http.StatusOK, detail)
 }
 
 type Supplier struct {
@@ -160,9 +201,13 @@ func (h *Handler) ListSuppliers(w http.ResponseWriter, r *http.Request) {
 	companyID := middleware.GetCompanyID(r.Context())
 
 	rows, err := h.db.Query(r.Context(),
-		`SELECT supplier_id, supplier_name, SUM(total_sum), COUNT(*), MAX(incoming_date)
-		 FROM purchase_facts WHERE company_id = $1 AND supplier_id IS NOT NULL
-		 GROUP BY supplier_id, supplier_name ORDER BY SUM(total_sum) DESC`,
+		`SELECT pf.supplier_id,
+		        COALESCE(NULLIF(MAX(sa.display_name), ''), MAX(pf.supplier_name), ''),
+		        SUM(pf.total_sum), COUNT(*), MAX(pf.incoming_date)
+		 FROM purchase_facts pf
+		 LEFT JOIN supplier_aliases sa ON sa.company_id = pf.company_id AND sa.iiko_supplier_id = pf.supplier_id
+		 WHERE pf.company_id = $1 AND pf.supplier_id IS NOT NULL
+		 GROUP BY pf.supplier_id ORDER BY SUM(pf.total_sum) DESC`,
 		companyID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to fetch suppliers")
@@ -184,6 +229,46 @@ func (h *Handler) ListSuppliers(w http.ResponseWriter, r *http.Request) {
 		suppliers = []Supplier{}
 	}
 	writeJSON(w, http.StatusOK, suppliers)
+}
+
+type SetAliasInput struct {
+	DisplayName string `json:"display_name"`
+}
+
+// SetSupplierAlias upserts a user-defined display name for an iiko supplier.
+func (h *Handler) SetSupplierAlias(w http.ResponseWriter, r *http.Request) {
+	companyID := middleware.GetCompanyID(r.Context())
+	supplierID := chi.URLParam(r, "id")
+
+	var input SetAliasInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	name := strings.TrimSpace(input.DisplayName)
+	if name == "" {
+		// Empty name = remove alias
+		_, err := h.db.Exec(r.Context(),
+			`DELETE FROM supplier_aliases WHERE company_id = $1 AND iiko_supplier_id = $2`,
+			companyID, supplierID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to remove alias")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
+		return
+	}
+	_, err := h.db.Exec(r.Context(),
+		`INSERT INTO supplier_aliases (company_id, iiko_supplier_id, display_name)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (company_id, iiko_supplier_id)
+		 DO UPDATE SET display_name = EXCLUDED.display_name, updated_at = NOW()`,
+		companyID, supplierID, name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to save alias")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"display_name": name})
 }
 
 func (h *Handler) GetSupplier(w http.ResponseWriter, r *http.Request) {

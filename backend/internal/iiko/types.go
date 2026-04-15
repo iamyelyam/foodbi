@@ -56,14 +56,25 @@ type ProductSalesRecord struct {
 
 // Purchase invoice from iiko.
 type PurchaseInvoice struct {
-	ID             string    `json:"id"`
-	IncomingDate   time.Time `json:"incomingDate"`
-	DocumentNumber string    `json:"documentNumber"`
-	SupplierID     string    `json:"supplierId"`
-	SupplierName   string    `json:"supplierName"`
-	StoreID        string    `json:"storeId"`
-	Status         string    `json:"status"`
-	Sum            float64   `json:"sum"`
+	ID             string              `json:"id"`
+	IncomingDate   time.Time           `json:"incomingDate"`
+	DocumentNumber string              `json:"documentNumber"`
+	SupplierID     string              `json:"supplierId"`
+	SupplierName   string              `json:"supplierName"`
+	StoreID        string              `json:"storeId"`
+	Status         string              `json:"status"`
+	Sum            float64             `json:"sum"`
+	Items          []PurchaseInvoiceItem `json:"items"`
+}
+
+// PurchaseInvoiceItem — single line from iiko invoice XML.
+type PurchaseInvoiceItem struct {
+	ProductID   string  `json:"productId"` // iiko product GUID
+	ProductName string  `json:"productName"`
+	Code        string  `json:"code"`
+	Amount      float64 `json:"amount"`
+	Price       float64 `json:"price"`
+	Sum         float64 `json:"sum"`
 }
 
 // Stock balance from iiko.

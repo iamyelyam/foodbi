@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { Header } from '@/components/layout/Header'
 import { Tabbar } from '@/components/layout/Tabbar'
 import { CardSkeleton } from '@/components/ui/skeleton'
 import { RevenueChart } from '@/components/charts/RevenueChart'
+import { PeriodPills } from '@/components/ui/period-pills'
 import { useDashboard, useRevenueTrend, useUnreadNotificationCount } from '@/hooks/useApi'
 import { TrendingUp, TrendingDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -9,9 +11,10 @@ import { useCurrency } from '@/stores/app'
 
 export function EmployeeHomePage() {
   const cs = useCurrency()
+  const [trendDays, setTrendDays] = useState<number>(7)
   const { data: unreadCount = 0 } = useUnreadNotificationCount()
   const { data: summary, isLoading } = useDashboard()
-  const { data: trend = [] } = useRevenueTrend(7)
+  const { data: trend = [] } = useRevenueTrend(trendDays)
 
   const changePercent = summary?.revenue_change_percent ?? 0
   const isPositive = changePercent >= 0
@@ -42,12 +45,15 @@ export function EmployeeHomePage() {
           </div>
         )}
 
-        {trend.length > 0 && (
-          <div className="bg-white rounded-[16px] p-4 shadow-sm">
-            <h3 className="text-sm font-semibold text-dark mb-3">Revenue Trend (7 days)</h3>
+        <div className="bg-white rounded-[16px] p-4 shadow-sm space-y-3">
+          <h3 className="text-sm font-semibold text-dark">Revenue Trend</h3>
+          <PeriodPills value={trendDays} onChange={setTrendDays} />
+          {trend.length > 0 ? (
             <RevenueChart data={trend} height={180} />
-          </div>
-        )}
+          ) : (
+            <p className="text-sm text-gray text-center py-4">No data for this period</p>
+          )}
+        </div>
 
         <div className="bg-white rounded-[16px] p-4 shadow-sm">
           <p className="text-sm text-gray text-center">

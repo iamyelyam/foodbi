@@ -17,6 +17,12 @@
 - **No hardcoded currency symbols** (`€`, `$`, `₽`) -- always use `useCurrency()` hook
 - **No division/multiplication on monetary values** anywhere in the pipeline (iiko -> sync -> DB -> API -> frontend)
 
+## UI Rules
+
+- **BottomSheet animation**: ALL bottom sheets across the project MUST slide smoothly up on open and slide smoothly down on close (300ms ease-out, overlay fades simultaneously). Always use the shared `<BottomSheet>` component from `@/components/layout/BottomSheet` — never re-implement. The component handles mount/unmount delay so the closing animation completes before the DOM is removed.
+- **Product/dish names AND categories**: always format with `formatProductName()` (or alias `formatCategory`) from `@/lib/format` — first letter uppercase, rest lowercase (e.g. "Плов классический", not "ПЛОВ КЛАССИЧЕСКИЙ"; "Плов готовый", not "ПЛОВ ГОТОВЫЙ"). Applies everywhere iiko-sourced names are rendered. In backend use `formatProductName()` helper in Go for AI-generated titles.
+- **No card background on white pages**: when page background is white, use light-gray metric cards (`bg-bg`). When page is gray (`bg-bg`), use white cards.
+
 ## Architecture
 
 - Backend: Go + Chi router + pgx/v5 (PostgreSQL)

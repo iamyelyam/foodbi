@@ -1,7 +1,12 @@
 import axios from 'axios'
 
+// In dev: relative '/api/v1' goes through Vite proxy to local Go backend.
+// In production (iOS Capacitor build, deployed web): use VITE_API_URL absolute URL.
+const API_ROOT = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') || ''
+const API_BASE = API_ROOT ? `${API_ROOT}/api/v1` : '/api/v1'
+
 const api = axios.create({
-  baseURL: '/api/v1',
+  baseURL: API_BASE,
   headers: { 'Content-Type': 'application/json' },
 })
 
@@ -26,7 +31,7 @@ api.interceptors.response.use(
         refreshPromise = (async () => {
           const refreshToken = localStorage.getItem('refresh_token')
           if (!refreshToken) throw new Error('No refresh token')
-          const { data } = await axios.post('/api/v1/auth/refresh', {
+          const { data } = await axios.post(`${API_BASE}/auth/refresh`, {
             refresh_token: refreshToken,
           })
           localStorage.setItem('access_token', data.access_token)
