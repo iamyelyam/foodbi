@@ -36,7 +36,7 @@ npx cap open ios       # Opens Xcode
 In Xcode:
 1. Left sidebar → **App** target → **Signing & Capabilities**:
    - Team: your Apple Developer team
-   - Bundle ID: `kz.foodbi`
+   - Bundle ID: `app.foodbi.kz`
    - Check "Automatically manage signing"
 2. Top bar → select **"Any iOS Device (arm64)"**.
 3. Menu: **Product → Archive**. Wait for build.

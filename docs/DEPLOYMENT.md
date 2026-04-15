@@ -139,7 +139,7 @@ See **[DEPLOY_TESTFLIGHT.md](../DEPLOY_TESTFLIGHT.md)** at the repository root f
 1. `cd frontend && npm run build` — Vite build to `dist/`
 2. `npx cap sync` — copies `dist/` into the `ios/` Xcode project bundle
 3. `npx cap open ios` — opens Xcode
-4. In Xcode: set Bundle ID `kz.foodbi`, select team, choose **Any iOS Device (arm64)**
+4. In Xcode: set Bundle ID `app.foodbi.kz`, select team, choose **Any iOS Device (arm64)**
 5. **Product → Archive**, then **Distribute App → App Store Connect → Upload**
 6. In App Store Connect → **TestFlight**: add internal testers
 

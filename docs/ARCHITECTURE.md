@@ -50,7 +50,7 @@ FoodBI is a multi-tenant restaurant analytics SaaS for Kazakhstan restaurant gro
                    ▼
 ┌──────────────────────────────────────────────────────────────────────┐
 │               Capacitor iOS Shell                                    │
-│  Bundle ID: kz.foodbi  (frontend/ios/App/App.xcodeproj)             │
+│  Bundle ID: app.foodbi.kz  (frontend/ios/App/App.xcodeproj)             │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -333,7 +333,7 @@ Authorization in handlers gates on `role == "owner"` vs everything else. The fin
 The frontend is wrapped as a native iOS app using Capacitor.
 
 - **Project location**: `frontend/ios/App/App.xcodeproj`
-- **Bundle ID**: `kz.foodbi`
+- **Bundle ID**: `app.foodbi.kz`
 - **Mechanism**: WKWebView renders the Vite-built React app; Capacitor plugins bridge native iOS APIs where needed.
 
 The web and iOS apps share the same React codebase. The `VITE_API_URL` environment variable points to the Railway production URL in both the web build (`frontend/.env.production`) and the iOS bundle.
