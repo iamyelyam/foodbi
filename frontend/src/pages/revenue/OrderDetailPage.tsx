@@ -10,6 +10,7 @@ import api from '@/lib/api'
 import { formatProductName } from '@/lib/format'
 import { useAuthStore } from '@/stores/auth'
 import { useCurrency } from '@/stores/app'
+import { useT, useI18nStore } from '@/i18n'
 
 const STATUS_STYLES: Record<string, string> = {
   closed: 'bg-success/10 text-success',
@@ -21,6 +22,8 @@ const STATUS_STYLES: Record<string, string> = {
 
 export function OrderDetailPage() {
   const { id } = useParams()
+  const t = useT()
+  const locale = useI18nStore((s) => s.locale)
   const cs = useCurrency()
   const queryClient = useQueryClient()
   const { user } = useAuthStore()
@@ -44,7 +47,7 @@ export function OrderDetailPage() {
 
   return (
     <div className="flex flex-col min-h-dvh bg-bg">
-      <Header title={`Order #${id?.slice(0, 8) || ''}`} showBack />
+      <Header title={t('orderDetail.title', { id: id?.slice(0, 8) || '' })} showBack />
       <main className="flex-1 px-4 pt-4 pb-20 space-y-3">
         {isLoading ? (
           <>
@@ -57,35 +60,40 @@ export function OrderDetailPage() {
             {/* Order header card */}
             <div className="bg-white rounded-[16px] p-4 shadow-sm space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray">Order #</span>
+                <span className="text-sm text-gray">{t('orderDetail.orderNumber')}</span>
                 <span className="text-sm font-semibold text-dark">{order.order_number || id?.slice(0, 8)}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray">Date</span>
-                <span className="text-sm text-dark">{new Date(order.order_date).toLocaleString()}</span>
+                <span className="text-sm text-gray">{t('orderDetail.date')}</span>
+                <span className="text-sm text-dark">{new Date(order.order_date).toLocaleString(locale)}</span>
               </div>
               {order.waiter_name && (
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray">Waiter</span>
+                  <span className="text-sm text-gray">{t('orderDetail.waiter')}</span>
                   <span className="text-sm text-dark">{order.waiter_name}</span>
                 </div>
               )}
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray">Type</span>
-                <span className="text-sm text-dark capitalize">{order.order_type}</span>
+                <span className="text-sm text-gray">{t('orderDetail.type')}</span>
+                <span className="text-sm text-dark">{
+                  order.order_type === 'dine-in' ? t('revenue.orderType.dineIn')
+                    : order.order_type === 'delivery' ? t('revenue.orderType.delivery')
+                    : order.order_type === 'takeaway' ? t('revenue.orderType.takeaway')
+                    : order.order_type
+                }</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray">Total</span>
+                <span className="text-sm text-gray">{t('orderDetail.total')}</span>
                 <span className="text-xl font-bold text-dark">{order.revenue?.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</span>
               </div>
               {order.discount > 0 && (
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray">Discount</span>
+                  <span className="text-sm text-gray">{t('orderDetail.discount')}</span>
                   <span className="text-sm text-danger">-{order.discount?.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</span>
                 </div>
               )}
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray">Status</span>
+                <span className="text-sm text-gray">{t('orderDetail.status')}</span>
                 {canChangeStatus ? (
                   <button
                     onClick={() => setShowStatusSheet(true)}
@@ -110,7 +118,7 @@ export function OrderDetailPage() {
             {/* Line items */}
             {order.items && order.items.length > 0 && (
               <div className="space-y-1">
-                <h3 className="text-sm font-semibold text-dark px-1">Items ({order.items.length})</h3>
+                <h3 className="text-sm font-semibold text-dark px-1">{t('orderDetail.items', { count: order.items.length })}</h3>
                 <div className="bg-white rounded-[16px] shadow-sm divide-y divide-bg-alt">
                   {order.items.map((item: any, idx: number) => (
                     <div key={idx} className="flex items-center justify-between px-4 py-3">
@@ -133,14 +141,14 @@ export function OrderDetailPage() {
             {(!order.items || order.items.length === 0) && order.item_count > 0 && (
               <div className="bg-white rounded-[16px] p-4 shadow-sm">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray">Total items</span>
+                  <span className="text-sm text-gray">{t('orderDetail.totalItems')}</span>
                   <span className="text-sm font-semibold text-dark">{order.item_count}</span>
                 </div>
               </div>
             )}
           </>
         ) : (
-          <p className="text-center text-sm text-gray py-12">Order not found</p>
+          <p className="text-center text-sm text-gray py-12">{t('orderDetail.notFound')}</p>
         )}
       </main>
       <Tabbar />
@@ -149,28 +157,28 @@ export function OrderDetailPage() {
       <BottomSheet
         isOpen={showStatusSheet}
         onClose={() => setShowStatusSheet(false)}
-        title="Change Order Status"
+        title={t('orderDetail.changeStatus')}
       >
         <div className="space-y-3 pb-4">
           <p className="text-sm text-gray text-center">
-            Current status: <span className="font-medium text-dark capitalize">{order?.status}</span>
+            {t('orderDetail.currentStatus', { status: order?.status ?? '' })}
           </p>
           <button
             onClick={() => statusMutation.mutate('approved')}
             disabled={statusMutation.isPending}
             className="w-full py-3 rounded-[12px] bg-success text-white font-semibold text-sm transition-opacity active:opacity-80 disabled:opacity-50"
           >
-            {statusMutation.isPending ? 'Updating...' : 'Approve'}
+            {statusMutation.isPending ? t('common.updating') : t('orderDetail.approve')}
           </button>
           <button
             onClick={() => statusMutation.mutate('rejected')}
             disabled={statusMutation.isPending}
             className="w-full py-3 rounded-[12px] border border-danger text-danger font-semibold text-sm transition-opacity active:opacity-80 disabled:opacity-50"
           >
-            {statusMutation.isPending ? 'Updating...' : 'Reject'}
+            {statusMutation.isPending ? t('common.updating') : t('orderDetail.reject')}
           </button>
           {statusMutation.isError && (
-            <p className="text-xs text-danger text-center">Failed to update status. Try again.</p>
+            <p className="text-xs text-danger text-center">{t('orderDetail.updateFailed')}</p>
           )}
         </div>
       </BottomSheet>

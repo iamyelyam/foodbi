@@ -11,8 +11,11 @@ import { useAuthStore } from '@/stores/auth'
 import { User, Mail, Phone, Shield, MapPin } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
+import { findRoleLabel } from '@/lib/employeeRoles'
+import { useT } from '@/i18n'
 
 export function EmployeeDetailPage() {
+  const t = useT()
   const { id } = useParams()
   const navigate = useNavigate()
   const { user } = useAuthStore()
@@ -30,18 +33,18 @@ export function EmployeeDetailPage() {
     mutationFn: () => api.post(`/employees/${id}/deactivate`),
     onSuccess: () => {
       setShowDeactivate(false)
-      setSnackbar({ open: true, message: 'Employee deactivated', type: 'success' })
+      setSnackbar({ open: true, message: t('employees.deactivatedSuccess'), type: 'success' })
       setTimeout(() => navigate('/employees'), 1500)
     },
     onError: () => {
       setShowDeactivate(false)
-      setSnackbar({ open: true, message: 'Failed to deactivate', type: 'error' })
+      setSnackbar({ open: true, message: t('employees.deactivateFailed'), type: 'error' })
     },
   })
 
   return (
     <div className="flex flex-col min-h-dvh bg-bg">
-      <Header title={emp ? `${emp.first_name} ${emp.last_name}` : 'Employee'} showBack />
+      <Header title={emp ? `${emp.first_name} ${emp.last_name}` : t('employees.employeeTitle')} showBack />
       <main className="flex-1 px-4 pt-4 pb-20 space-y-3">
         {isLoading ? <><ListItemSkeleton /><ListItemSkeleton /></> : emp ? (
           <>
@@ -51,30 +54,30 @@ export function EmployeeDetailPage() {
                 <User className={cn('h-10 w-10', emp.role === 'owner' ? 'text-warning' : 'text-primary')} />
               </div>
               <p className="mt-3 text-lg font-bold text-dark">{emp.first_name} {emp.last_name}</p>
-              <span className={cn('text-xs px-3 py-1 rounded-full font-medium capitalize mt-1',
+              <span className={cn('text-xs px-3 py-1 rounded-full font-medium mt-1',
                 emp.role === 'owner' ? 'bg-warning/10 text-warning' : 'bg-primary-lighter text-primary')}>
-                {emp.role}
+                {findRoleLabel(emp.role)}
               </span>
             </div>
 
             <div className="bg-white rounded-[16px] p-4 shadow-sm space-y-4">
               <div className="flex items-center gap-3">
                 <Mail className="h-5 w-5 text-gray" />
-                <div><p className="text-xs text-gray">Email</p><p className="text-sm text-dark">{emp.email}</p></div>
+                <div><p className="text-xs text-gray">{t('common.email')}</p><p className="text-sm text-dark">{emp.email}</p></div>
               </div>
               <div className="flex items-center gap-3">
                 <Phone className="h-5 w-5 text-gray" />
-                <div><p className="text-xs text-gray">Phone</p><p className="text-sm text-dark">{emp.phone || 'Not set'}</p></div>
+                <div><p className="text-xs text-gray">{t('common.phone')}</p><p className="text-sm text-dark">{emp.phone || t('common.notSet')}</p></div>
               </div>
               <div className="flex items-center gap-3">
                 <Shield className="h-5 w-5 text-gray" />
-                <div><p className="text-xs text-gray">Status</p><p className="text-sm text-dark">{emp.is_active ? 'Active' : 'Inactive'}</p></div>
+                <div><p className="text-xs text-gray">{t('employees.status')}</p><p className="text-sm text-dark">{emp.is_active ? t('employees.active') : t('employees.inactive')}</p></div>
               </div>
             </div>
 
             {emp.locations && emp.locations.length > 0 && (
               <div className="bg-white rounded-[16px] p-4 shadow-sm">
-                <p className="text-sm font-semibold text-dark mb-3">Assigned Locations</p>
+                <p className="text-sm font-semibold text-dark mb-3">{t('employees.assignedLocations')}</p>
                 <div className="space-y-2">
                   {emp.locations.map((loc: string, i: number) => (
                     <div key={i} className="flex items-center gap-2">
@@ -88,24 +91,24 @@ export function EmployeeDetailPage() {
 
             {isOwner && emp.is_active && emp.role !== 'owner' && (
               <Button variant="danger" fullWidth onClick={() => setShowDeactivate(true)}>
-                Deactivate Employee
+                {t('employees.deactivate')}
               </Button>
             )}
           </>
         ) : (
-          <p className="text-center text-sm text-gray py-12">Employee not found</p>
+          <p className="text-center text-sm text-gray py-12">{t('employees.notFound')}</p>
         )}
       </main>
       <Tabbar />
 
-      <Modal isOpen={showDeactivate} onClose={() => setShowDeactivate(false)} title="Deactivate Employee">
+      <Modal isOpen={showDeactivate} onClose={() => setShowDeactivate(false)} title={t('employees.deactivate')}>
         <p className="text-sm text-gray mb-4">
-          Are you sure you want to deactivate {emp?.first_name} {emp?.last_name}?
+          {t('employees.deactivateConfirm', { name: `${emp?.first_name ?? ''} ${emp?.last_name ?? ''}`.trim() })}
         </p>
         <div className="flex gap-3">
-          <Button variant="secondary" fullWidth onClick={() => setShowDeactivate(false)}>Cancel</Button>
+          <Button variant="secondary" fullWidth onClick={() => setShowDeactivate(false)}>{t('common.cancel')}</Button>
           <Button variant="danger" fullWidth onClick={() => deactivateMutation.mutate()} disabled={deactivateMutation.isPending}>
-            {deactivateMutation.isPending ? 'Deactivating...' : 'Deactivate'}
+            {deactivateMutation.isPending ? t('employees.deactivating') : t('employees.deactivateShort')}
           </Button>
         </div>
       </Modal>

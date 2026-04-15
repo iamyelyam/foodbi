@@ -3,25 +3,28 @@ import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { ProgressBar } from '@/components/ui/progress-bar'
 import { Bell, Fingerprint } from 'lucide-react'
-
-const steps = [
-  {
-    icon: Bell,
-    title: 'Enable Notifications',
-    description: 'Get alerts about low stock, supply approvals, and sync status. You can change this later in settings.',
-    action: 'Enable',
-  },
-  {
-    icon: Fingerprint,
-    title: 'Enable Face ID',
-    description: 'Use biometric authentication for faster and more secure access to your account.',
-    action: 'Enable',
-  },
-]
+import { useT } from '@/i18n'
 
 export function OnboardingPage() {
   const navigate = useNavigate()
+  const t = useT()
   const [step, setStep] = useState(0)
+
+  // Step defs use the current locale via t() — recomputed on each render when locale changes.
+  const steps = [
+    {
+      icon: Bell,
+      title: t('auth.enableNotifications'),
+      description: t('auth.enableNotificationsDesc'),
+      action: t('auth.enableAction'),
+    },
+    {
+      icon: Fingerprint,
+      title: t('auth.enableFaceId'),
+      description: t('auth.enableFaceIdDesc'),
+      action: t('auth.enableAction'),
+    },
+  ]
 
   const current = steps[step]
   const progress = ((step + 1) / steps.length) * 100
@@ -57,7 +60,7 @@ export function OnboardingPage() {
 
       <div className="px-4 pb-8 space-y-3">
         <Button fullWidth onClick={handleAction}>{current.action}</Button>
-        <Button variant="ghost" fullWidth onClick={advance}>Skip</Button>
+        <Button variant="ghost" fullWidth onClick={advance}>{t('auth.skipAction')}</Button>
       </div>
     </div>
   )

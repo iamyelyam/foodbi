@@ -7,9 +7,11 @@ import { ListItemSkeleton } from '@/components/ui/skeleton'
 import api from '@/lib/api'
 import { formatProductName } from '@/lib/format'
 import { useCurrency } from '@/stores/app'
+import { useT } from '@/i18n'
 
 export function ProductDetailPage() {
   const { id } = useParams()
+  const t = useT()
   const cs = useCurrency()
 
   const { data: product, isLoading } = useQuery({
@@ -40,7 +42,7 @@ export function ProductDetailPage() {
 
   return (
     <div className="flex flex-col min-h-dvh bg-bg">
-      <Header title={product?.name ? formatProductName(product.name) : 'Product Details'} showBack />
+      <Header title={product?.name ? formatProductName(product.name) : t('productDetail.title')} showBack />
       <main className="flex-1 px-4 pt-4 pb-20 space-y-3">
         {isLoading ? (
           <>
@@ -52,7 +54,7 @@ export function ProductDetailPage() {
           <>
             {/* Product header card */}
             <div className="bg-white rounded-[16px] p-4 shadow-sm">
-              <h2 className="text-lg font-bold text-dark">{product?.name ? formatProductName(product.name) : 'Unknown Product'}</h2>
+              <h2 className="text-lg font-bold text-dark">{product?.name ? formatProductName(product.name) : t('productDetail.unknown')}</h2>
               {product?.category && (
                 <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
                   {formatProductName(product.category)}
@@ -60,11 +62,11 @@ export function ProductDetailPage() {
               )}
               <div className="grid grid-cols-2 gap-3 mt-4">
                 <div className="bg-bg rounded-[12px] p-3">
-                  <p className="text-xs text-gray">Total Revenue</p>
+                  <p className="text-xs text-gray">{t('productDetail.totalRevenue')}</p>
                   <p className="text-lg font-bold text-dark mt-1">{totalRev.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</p>
                 </div>
                 <div className="bg-bg rounded-[12px] p-3">
-                  <p className="text-xs text-gray">Total Sold</p>
+                  <p className="text-xs text-gray">{t('productDetail.totalSold')}</p>
                   <p className="text-lg font-bold text-dark mt-1">{totalQty.toFixed(0)}</p>
                 </div>
               </div>
@@ -74,15 +76,15 @@ export function ProductDetailPage() {
             {trend.length > 0 && (
               <div className="grid grid-cols-3 gap-2">
                 <div className="bg-white rounded-[12px] p-3 shadow-sm text-center">
-                  <p className="text-xs text-gray">Avg Daily</p>
+                  <p className="text-xs text-gray">{t('revenue.avgDaily')}</p>
                   <p className="text-sm font-bold text-dark mt-1">{avgDaily.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</p>
                 </div>
                 <div className="bg-white rounded-[12px] p-3 shadow-sm text-center">
-                  <p className="text-xs text-gray">Best Day</p>
+                  <p className="text-xs text-gray">{t('revenue.bestDay')}</p>
                   <p className="text-sm font-bold text-success mt-1">{bestDay.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</p>
                 </div>
                 <div className="bg-white rounded-[12px] p-3 shadow-sm text-center">
-                  <p className="text-xs text-gray">Worst Day</p>
+                  <p className="text-xs text-gray">{t('revenue.worstDay')}</p>
                   <p className="text-sm font-bold text-danger mt-1">{worstDay.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</p>
                 </div>
               </div>
@@ -91,7 +93,7 @@ export function ProductDetailPage() {
             {/* Daily sales trend chart */}
             {trend.length > 0 && (
               <div className="bg-white rounded-[16px] p-4 shadow-sm">
-                <h3 className="text-sm font-semibold text-dark mb-3">Sales Trend (30 days)</h3>
+                <h3 className="text-sm font-semibold text-dark mb-3">{t('productDetail.salesTrend', { days: 30 })}</h3>
                 <RevenueChart data={trend.map((d: any) => ({ date: d.date, revenue: d.revenue }))} height={200} />
               </div>
             )}
@@ -99,7 +101,7 @@ export function ProductDetailPage() {
             {/* Recent orders */}
             {recentOrders.length > 0 && (
               <div className="space-y-1">
-                <h3 className="text-sm font-semibold text-dark px-1">Recent Orders</h3>
+                <h3 className="text-sm font-semibold text-dark px-1">{t('productDetail.recentOrders')}</h3>
                 <div className="bg-white rounded-[16px] shadow-sm divide-y divide-bg-alt">
                   {recentOrders.map((o: any) => (
                     <div key={o.id} className="flex items-center justify-between px-4 py-3">
@@ -109,7 +111,7 @@ export function ProductDetailPage() {
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-semibold text-dark">{o.revenue?.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</p>
-                        <p className="text-xs text-gray">{o.quantity} pcs</p>
+                        <p className="text-xs text-gray">{t('productDetail.piecesSuffix', { count: o.quantity })}</p>
                       </div>
                     </div>
                   ))}

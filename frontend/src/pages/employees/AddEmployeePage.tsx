@@ -10,9 +10,10 @@ import { Input } from '@/components/ui/input'
 import { BottomSheet } from '@/components/layout/BottomSheet'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Snackbar } from '@/components/ui/snackbar'
-import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
+import { EMPLOYEE_ROLES, findRoleLabel } from '@/lib/employeeRoles'
+import { useT } from '@/i18n'
 
 const schema = z.object({
   first_name: z.string().min(1, 'Required'),
@@ -25,9 +26,10 @@ const schema = z.object({
 type Form = z.infer<typeof schema>
 
 export function AddEmployeePage() {
+  const t = useT()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [role, setRole] = useState('employee')
+  const [role, setRole] = useState<string>(EMPLOYEE_ROLES[0].id)
   const [showRoles, setShowRoles] = useState(false)
   const [showLocations, setShowLocations] = useState(false)
   const [selectedLocs, setSelectedLocs] = useState<string[]>([])
@@ -62,57 +64,73 @@ export function AddEmployeePage() {
 
   return (
     <div className="flex flex-col min-h-dvh bg-white">
-      <Header title="Adding an employee" showBack />
+      <Header title={t('employees.addingAnEmployee')} showBack />
       <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-1 px-4 pt-4 gap-4">
         <div className="grid grid-cols-2 gap-3">
-          <Input label="First name" error={errors.first_name?.message} {...register('first_name')} />
-          <Input label="Last name" error={errors.last_name?.message} {...register('last_name')} />
+          <Input label={t('common.firstName')} error={errors.first_name?.message} {...register('first_name')} />
+          <Input label={t('common.lastName')} error={errors.last_name?.message} {...register('last_name')} />
         </div>
-        <Input label="Email" type="email" error={errors.email?.message} {...register('email')} />
-        <Input label="Phone" {...register('phone')} />
-        <Input label="Password" type="password" error={errors.password?.message} {...register('password')} />
+        <Input label={t('common.email')} type="email" error={errors.email?.message} {...register('email')} />
+        <Input label={t('common.phone')} {...register('phone')} />
+        <Input label={t('common.password')} type="password" error={errors.password?.message} {...register('password')} />
 
         {/* Role selector */}
         <div>
-          <label className="text-sm font-medium text-gray">Role</label>
+          <label className="text-sm font-medium text-gray">{t('employees.role')}</label>
           <button type="button" onClick={() => setShowRoles(true)}
-            className="w-full mt-1 h-12 rounded-[12px] border border-bg-alt px-4 text-left text-sm text-dark capitalize bg-white">
-            {role}
+            className="w-full mt-1 h-12 rounded-[12px] border border-bg-alt px-4 text-left text-sm text-dark bg-white">
+            {findRoleLabel(role)}
           </button>
         </div>
 
         {/* Location selector */}
         <div>
-          <label className="text-sm font-medium text-gray">Locations</label>
+          <label className="text-sm font-medium text-gray">{t('employees.locations')}</label>
           <button type="button" onClick={() => setShowLocations(true)}
             className="w-full mt-1 h-12 rounded-[12px] border border-bg-alt px-4 text-left text-sm text-dark bg-white">
-            {selectedLocs.length > 0 ? `${selectedLocs.length} selected` : 'Select locations'}
+            {selectedLocs.length > 0
+              ? t('employees.nSelected', { count: selectedLocs.length })
+              : t('employees.selectLocations')}
           </button>
         </div>
 
-        {mutation.isError && <p className="text-sm text-danger text-center">Failed to add employee</p>}
+        {mutation.isError && <p className="text-sm text-danger text-center">{t('employees.addFailed')}</p>}
 
         <div className="mt-auto pb-8">
           <Button type="submit" fullWidth disabled={mutation.isPending}>
-            {mutation.isPending ? 'Adding...' : 'Add Employee'}
+            {mutation.isPending ? t('common.adding') : t('employees.addEmployee')}
           </Button>
         </div>
       </form>
 
-      {/* Role BottomSheet */}
-      <BottomSheet isOpen={showRoles} onClose={() => setShowRoles(false)} title="Choose a role">
-        {['owner', 'employee'].map((r) => (
-          <button key={r} onClick={() => { setRole(r); setShowRoles(false) }}
-            className={cn('w-full flex items-center justify-between p-3 rounded-[12px] mb-2',
-              role === r ? 'bg-primary/5' : 'hover:bg-bg-alt')}>
-            <span className="text-sm font-medium text-dark capitalize">{r}</span>
-            {role === r && <Check className="h-5 w-5 text-primary" />}
-          </button>
-        ))}
+      {/* Role BottomSheet — radio-style picker, single selection */}
+      <BottomSheet isOpen={showRoles} onClose={() => setShowRoles(false)} title={t('employees.chooseRole')}>
+        <div className="divide-y divide-bg-alt">
+          {EMPLOYEE_ROLES.map((r) => {
+            const active = role === r.id
+            return (
+              <button
+                key={r.id}
+                onClick={() => { setRole(r.id); setShowRoles(false) }}
+                className="w-full flex items-center justify-between py-4 text-left"
+              >
+                <span className="text-base text-dark">{r.label}</span>
+                <span
+                  className={cn(
+                    'w-6 h-6 rounded-full border-2 flex items-center justify-center',
+                    active ? 'border-primary bg-primary' : 'border-gray-light bg-white'
+                  )}
+                >
+                  {active && <span className="w-2 h-2 rounded-full bg-white" />}
+                </span>
+              </button>
+            )
+          })}
+        </div>
       </BottomSheet>
 
       {/* Location BottomSheet */}
-      <BottomSheet isOpen={showLocations} onClose={() => setShowLocations(false)} title="Select locations">
+      <BottomSheet isOpen={showLocations} onClose={() => setShowLocations(false)} title={t('employees.selectLocations')}>
         <div className="space-y-2">
           {locations.map((loc: any) => (
             <Checkbox key={loc.id} label={loc.name}
@@ -120,13 +138,13 @@ export function AddEmployeePage() {
               onChange={() => toggleLoc(loc.id)} />
           ))}
         </div>
-        <Button fullWidth className="mt-4" onClick={() => setShowLocations(false)}>Done</Button>
+        <Button fullWidth className="mt-4" onClick={() => setShowLocations(false)}>{t('common.done')}</Button>
       </BottomSheet>
 
       <Snackbar
         isOpen={showSuccess}
         onClose={() => setShowSuccess(false)}
-        message="Employee added successfully"
+        message={t('employees.addedSuccess')}
         type="success"
       />
     </div>

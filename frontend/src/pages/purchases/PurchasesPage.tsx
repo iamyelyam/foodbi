@@ -5,18 +5,18 @@ import { CardSkeleton } from '@/components/ui/skeleton'
 import { Header } from '@/components/layout/Header'
 import { Tabbar } from '@/components/layout/Tabbar'
 import { BottomSheet } from '@/components/layout/BottomSheet'
-import { DateRangePicker } from '@/components/ui/date-range-picker'
+import { DateRangeSheet } from '@/components/layout/DateRangeSheet'
 import { usePurchases, useSuppliers, useUnreadNotificationCount } from '@/hooks/useApi'
 import { Filter, ChevronRight, Calendar, Coins, Receipt, ScanLine, Pencil, Check, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
 import { formatProductName, formatSupplierName } from '@/lib/format'
 import { useCurrency } from '@/stores/app'
-import { useT } from '@/i18n'
+import { useT, useI18nStore } from '@/i18n'
 
-function formatDay(dateStr: string): string {
+function formatDay(dateStr: string, locale: string = 'en'): string {
   const d = new Date(dateStr + 'T00:00:00')
-  return d.toLocaleDateString('en', { month: 'long', day: 'numeric' })
+  return d.toLocaleDateString(locale, { month: 'long', day: 'numeric' })
 }
 function todayIso(): string {
   return new Date().toISOString().split('T')[0]
@@ -31,6 +31,7 @@ const formatMoney = (v: number) => v.toLocaleString('ru-KZ', { maximumFractionDi
 export function PurchasesPage() {
   const cs = useCurrency()
   const t = useT()
+  const locale = useI18nStore((s) => s.locale)
   const navigate = useNavigate()
 
   // Purchases happen less often than orders — default to last 30 days.
@@ -82,11 +83,11 @@ export function PurchasesPage() {
     enabled: !!selectedPurchaseId,
   })
 
-  const rangeLabel = `${formatDay(dateFrom)} - ${formatDay(dateTo)}`
+  const rangeLabel = `${formatDay(dateFrom, locale)} - ${formatDay(dateTo, locale)}`
 
   return (
     <div className="flex flex-col min-h-dvh bg-white">
-      <Header title={t('purchases.title') || 'Purchases'} showBack showNotification badgeCount={unreadCount} />
+      <Header title={t('purchases.title')} showBack showNotification badgeCount={unreadCount} />
 
       {/* Date range */}
       <div className="px-4 pt-2 pb-3">
@@ -106,12 +107,12 @@ export function PurchasesPage() {
           <MetricCard
             icon={<Coins className="h-4 w-4 text-primary" />}
             value={formatMoney(totals.sum) + cs}
-            label="Purchases"
+            label={t('purchases.title')}
           />
           <MetricCard
             icon={<Receipt className="h-4 w-4 text-primary" />}
             value={String(totals.count)}
-            label="Invoices"
+            label={t('purchases.invoices')}
           />
         </div>
       </div>
@@ -121,17 +122,17 @@ export function PurchasesPage() {
         <button
           onClick={() => setShowFilters(true)}
           className="flex flex-col items-center gap-0.5 shrink-0"
-          aria-label="Filters"
+          aria-label={t('common.filter')}
         >
           <Filter className="h-5 w-5 text-dark" />
-          <span className="text-[10px] text-gray">Filters</span>
+          <span className="text-[10px] text-gray">{t('common.filter')}</span>
         </button>
         <button
           onClick={() => navigate('/file-upload')}
           className="flex-1 flex items-center justify-center gap-2 bg-primary text-dark font-semibold py-3 rounded-full"
         >
           <ScanLine className="h-4 w-4" />
-          Scan a file
+          {t('purchases.scanFile')}
         </button>
       </div>
 
@@ -156,7 +157,7 @@ export function PurchasesPage() {
                       {formatSupplierName(p.supplier_name)}
                     </p>
                     <p className="text-xs text-gray mt-0.5">
-                      {new Date(p.incoming_date).toLocaleDateString('ru-RU')}
+                      {new Date(p.incoming_date).toLocaleDateString(locale)}
                     </p>
                   </div>
                   <p className="text-sm font-bold text-dark shrink-0">
@@ -168,7 +169,7 @@ export function PurchasesPage() {
             {purchases.length === 0 && (
               <div className="text-center py-12">
                 <Receipt className="h-12 w-12 text-gray-light mx-auto mb-3" />
-                <p className="text-sm text-gray">No invoices for this period</p>
+                <p className="text-sm text-gray">{t('purchases.noInvoicesForPeriod')}</p>
               </div>
             )}
           </div>
@@ -202,7 +203,7 @@ export function PurchasesPage() {
                           setEditingSupplier(null)
                         }
                       }}
-                      placeholder="Supplier name"
+                      placeholder={t('purchases.supplierNamePlaceholder')}
                       className="flex-1 min-w-0 bg-bg rounded-[10px] px-3 py-2 text-base font-bold text-dark outline-none border border-primary"
                     />
                     <button
@@ -239,7 +240,7 @@ export function PurchasesPage() {
                           setAliasDraft(isUuid ? '' : current)
                         }}
                         className="w-7 h-7 rounded-full bg-bg flex items-center justify-center shrink-0 active:opacity-70"
-                        aria-label="Edit supplier name"
+                        aria-label={t('purchases.editSupplier')}
                       >
                         <Pencil className="h-3.5 w-3.5 text-gray" />
                       </button>
@@ -248,7 +249,7 @@ export function PurchasesPage() {
                 )}
               </div>
               <p className="text-sm text-gray shrink-0 pt-2">
-                {new Date(purchaseDetail.incoming_date).toLocaleDateString('ru-RU')}
+                {new Date(purchaseDetail.incoming_date).toLocaleDateString(locale)}
               </p>
             </div>
 
@@ -257,13 +258,13 @@ export function PurchasesPage() {
                 <p className="text-sm font-bold text-dark">
                   {formatMoney(purchaseDetail.total_sum || 0)}{cs}
                 </p>
-                <p className="text-[10px] text-gray mt-0.5">Total</p>
+                <p className="text-[10px] text-gray mt-0.5">{t('revenue.totalLabel')}</p>
               </div>
               <div className="bg-bg rounded-[12px] p-3">
                 <p className="text-sm font-bold text-dark">
                   #{purchaseDetail.document_number || '—'}
                 </p>
-                <p className="text-[10px] text-gray mt-0.5">Document</p>
+                <p className="text-[10px] text-gray mt-0.5">{t('purchases.document')}</p>
               </div>
             </div>
 
@@ -286,14 +287,14 @@ export function PurchasesPage() {
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-gray text-center py-4">No line items</p>
+              <p className="text-sm text-gray text-center py-4">{t('purchases.noLineItems')}</p>
             )}
 
             <button
               onClick={() => setSelectedPurchaseId(null)}
               className="w-full text-center text-primary font-semibold py-2"
             >
-              Back
+              {t('common.back')}
             </button>
           </div>
         )}
@@ -303,9 +304,9 @@ export function PurchasesPage() {
       <BottomSheet isOpen={showFilters} onClose={() => setShowFilters(false)}>
         <div className="space-y-5">
           <div>
-            <p className="text-base font-bold text-dark mb-3">Supplier</p>
+            <p className="text-base font-bold text-dark mb-3">{t('purchases.supplierFilter')}</p>
             {suppliers.length === 0 ? (
-              <p className="text-xs text-gray">No suppliers loaded</p>
+              <p className="text-xs text-gray">{t('purchases.noSuppliersLoaded')}</p>
             ) : (
               <div className="flex flex-wrap gap-2 max-h-60 overflow-y-auto">
                 {(suppliers as any[]).map((s: any) => {
@@ -341,34 +342,26 @@ export function PurchasesPage() {
             onClick={() => setShowFilters(false)}
             className="w-full bg-primary text-dark font-bold py-3 rounded-full"
           >
-            Show {purchases.length} results
+            {t('common.showResults', { count: purchases.length })}
           </button>
           <button
             onClick={() => setShowFilters(false)}
             className="w-full text-center text-primary font-semibold"
           >
-            Back
+            {t('common.back')}
           </button>
         </div>
       </BottomSheet>
 
-      {/* Date range picker — last so it stacks above */}
-      <BottomSheet
+      {/* Date range picker — unified BottomSheet shared across pages */}
+      <DateRangeSheet
         isOpen={showRangePicker}
         onClose={() => setShowRangePicker(false)}
-        title="Select period"
-      >
-        <DateRangePicker
-          startDate={dateFrom}
-          endDate={dateTo}
-          onConfirm={(start, end) => {
-            setDateFrom(start)
-            setDateTo(end)
-            setShowRangePicker(false)
-          }}
-          onBack={() => setShowRangePicker(false)}
-        />
-      </BottomSheet>
+        from={dateFrom}
+        to={dateTo}
+        onChange={(f, t) => { setDateFrom(f); setDateTo(t) }}
+        resultsCount={purchases.length}
+      />
     </div>
   )
 }

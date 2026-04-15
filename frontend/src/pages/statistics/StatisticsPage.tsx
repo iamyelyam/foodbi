@@ -43,7 +43,7 @@ export function StatisticsPage() {
 
   return (
     <div className="flex flex-col min-h-dvh bg-bg">
-      <Header title={t('statistics.title')} showBack showNotification badgeCount={unreadCount} />
+      <Header title={t('statistics.pageTitle')} showBack showNotification badgeCount={unreadCount} />
 
       {/* Tab control */}
       <div className="px-4 pt-2 pb-3">
@@ -57,7 +57,7 @@ export function StatisticsPage() {
                 tab === tabKey ? 'bg-white text-dark shadow-sm' : 'text-gray'
               )}
             >
-              {t(`statistics.${tabKey}`)}
+              {tabKey === 'revenue' ? t('statistics.revenueTab') : t('statistics.profitTab')}
             </button>
           ))}
         </div>
@@ -84,7 +84,7 @@ export function StatisticsPage() {
             period === 'custom' ? 'bg-primary text-white' : 'bg-white text-gray'
           )}
         >
-          <Filter className="h-3 w-3" /> Custom
+          <Filter className="h-3 w-3" /> {t('statistics.custom')}
         </button>
       </div>
 
@@ -93,13 +93,13 @@ export function StatisticsPage() {
         <div className="px-4 pb-3 flex flex-wrap gap-2">
           {customDateFrom && (
             <FilterChip
-              label={`From: ${customDateFrom}`}
+              label={t('statistics.fromPrefix', { date: customDateFrom })}
               onRemove={() => { setCustomDateFrom(''); if (!customDateTo) setPeriod('30') }}
             />
           )}
           {customDateTo && (
             <FilterChip
-              label={`To: ${customDateTo}`}
+              label={t('statistics.toPrefix', { date: customDateTo })}
               onRemove={() => { setCustomDateTo(''); if (!customDateFrom) setPeriod('30') }}
             />
           )}
@@ -112,24 +112,24 @@ export function StatisticsPage() {
             {/* Summary cards */}
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-white rounded-[12px] p-3 shadow-sm">
-                <p className="text-xs text-gray">Total Revenue</p>
+                <p className="text-xs text-gray">{t('statistics.totalRevenue')}</p>
                 <p className="text-lg font-bold text-dark mt-1">
                   {totalRevenue.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}
                 </p>
               </div>
               <div className="bg-white rounded-[12px] p-3 shadow-sm">
-                <p className="text-xs text-gray">Total Orders</p>
+                <p className="text-xs text-gray">{t('statistics.totalOrders')}</p>
                 <p className="text-lg font-bold text-dark mt-1">{totalOrders}</p>
               </div>
             </div>
 
             {/* Chart */}
             <div className="bg-white rounded-[16px] p-4 shadow-sm">
-              <h3 className="text-sm font-semibold text-dark mb-3">Revenue Over Time</h3>
+              <h3 className="text-sm font-semibold text-dark mb-3">{t('statistics.revenueOverTime')}</h3>
               {revenueData.length > 0 ? (
                 <RevenueChart data={revenueData} height={220} />
               ) : (
-                <p className="text-sm text-gray text-center py-8">No data for this period</p>
+                <p className="text-sm text-gray text-center py-8">{t('statistics.noDataPeriod')}</p>
               )}
             </div>
           </>
@@ -139,13 +139,13 @@ export function StatisticsPage() {
           <>
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-white rounded-[12px] p-3 shadow-sm">
-                <p className="text-xs text-gray">Gross Profit</p>
+                <p className="text-xs text-gray">{t('statistics.grossProfit')}</p>
                 <p className={cn('text-lg font-bold mt-1', totalProfit >= 0 ? 'text-success' : 'text-danger')}>
                   {totalProfit.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}
                 </p>
               </div>
               <div className="bg-white rounded-[12px] p-3 shadow-sm">
-                <p className="text-xs text-gray">Total Cost</p>
+                <p className="text-xs text-gray">{t('statistics.totalCost')}</p>
                 <p className="text-lg font-bold text-warning mt-1">
                   {totalCost.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}
                 </p>
@@ -153,11 +153,11 @@ export function StatisticsPage() {
             </div>
 
             <div className="bg-white rounded-[16px] p-4 shadow-sm">
-              <h3 className="text-sm font-semibold text-dark mb-3">Revenue vs Cost</h3>
+              <h3 className="text-sm font-semibold text-dark mb-3">{t('statistics.revenueVsCost')}</h3>
               {profitData.length > 0 ? (
                 <ProfitChart data={profitData} height={220} />
               ) : (
-                <p className="text-sm text-gray text-center py-8">No data for this period</p>
+                <p className="text-sm text-gray text-center py-8">{t('statistics.noDataPeriod')}</p>
               )}
             </div>
           </>
@@ -167,16 +167,16 @@ export function StatisticsPage() {
       <Tabbar />
 
       {/* Custom date range BottomSheet */}
-      <BottomSheet isOpen={showFilters} onClose={() => { setShowFilters(false); setPickingDate(null) }} title="Custom Date Range">
+      <BottomSheet isOpen={showFilters} onClose={() => { setShowFilters(false); setPickingDate(null) }} title={t('statistics.customRange')}>
         <div className="space-y-4">
           {/* Date from */}
           <div>
-            <label className="text-xs font-medium text-gray mb-1 block">Date from</label>
+            <label className="text-xs font-medium text-gray mb-1 block">{t('statistics.dateFromLabel')}</label>
             <button
               onClick={() => setPickingDate(pickingDate === 'from' ? null : 'from')}
               className="w-full h-12 rounded-[12px] border border-bg-alt px-4 text-left text-sm text-dark"
             >
-              {customDateFrom || 'Select date'}
+              {customDateFrom || t('statistics.selectDate')}
             </button>
             {pickingDate === 'from' && (
               <div className="mt-2">
@@ -191,12 +191,12 @@ export function StatisticsPage() {
 
           {/* Date to */}
           <div>
-            <label className="text-xs font-medium text-gray mb-1 block">Date to</label>
+            <label className="text-xs font-medium text-gray mb-1 block">{t('statistics.dateToLabel')}</label>
             <button
               onClick={() => setPickingDate(pickingDate === 'to' ? null : 'to')}
               className="w-full h-12 rounded-[12px] border border-bg-alt px-4 text-left text-sm text-dark"
             >
-              {customDateTo || 'Select date'}
+              {customDateTo || t('statistics.selectDate')}
             </button>
             {pickingDate === 'to' && (
               <div className="mt-2">
@@ -211,10 +211,10 @@ export function StatisticsPage() {
 
           <div className="flex gap-3">
             <Button variant="secondary" fullWidth onClick={() => { setCustomDateFrom(''); setCustomDateTo(''); setPeriod('30'); setShowFilters(false); setPickingDate(null) }}>
-              Clear
+              {t('common.clear')}
             </Button>
             <Button fullWidth onClick={() => { setPeriod('custom'); setShowFilters(false); setPickingDate(null) }}>
-              Apply
+              {t('common.apply')}
             </Button>
           </div>
         </div>

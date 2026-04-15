@@ -11,6 +11,7 @@ import { Upload, Camera, FileText, Image, File, Share2, Trash2, Eye } from 'luci
 import { cn } from '@/lib/utils'
 import { useUnreadNotificationCount } from '@/hooks/useApi'
 import api from '@/lib/api'
+import { useT, useI18nStore } from '@/i18n'
 
 const mimeIcons: Record<string, typeof File> = {
   'application/pdf': FileText,
@@ -29,18 +30,10 @@ function setPermission(key: string) {
 const ALLOWED_TYPES = ['application/pdf', 'image/jpeg', 'image/png']
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
 
-function validateFile(file: globalThis.File): string | null {
-  if (!ALLOWED_TYPES.includes(file.type)) {
-    return 'Only PDF, JPEG, and PNG files are allowed.'
-  }
-  if (file.size > MAX_FILE_SIZE) {
-    return 'File must be smaller than 10 MB.'
-  }
-  return null
-}
-
 export function FileUploadPage() {
   const queryClient = useQueryClient()
+  const t = useT()
+  const locale = useI18nStore((s) => s.locale)
   const { data: unreadCount = 0 } = useUnreadNotificationCount()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploadError, setUploadError] = useState('')
@@ -59,6 +52,16 @@ export function FileUploadPage() {
   const [selectedFile, setSelectedFile] = useState<any>(null)
   const [actionSheetOpen, setActionSheetOpen] = useState(false)
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function validateFile(file: globalThis.File): string | null {
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      return t('fileUpload.invalidType')
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      return t('fileUpload.fileTooBig')
+    }
+    return null
+  }
 
   const { data: files = [], isLoading: filesLoading } = useQuery({
     queryKey: ['files'],
@@ -171,7 +174,7 @@ export function FileUploadPage() {
 
   return (
     <div className="flex flex-col min-h-dvh bg-bg">
-      <Header title="File Upload" showBack showNotification badgeCount={unreadCount} />
+      <Header title={t('fileUpload.pageTitle')} showBack showNotification badgeCount={unreadCount} />
 
       <main className="flex-1 px-4 pt-4 pb-20 space-y-4">
         {/* Upload actions */}
@@ -183,7 +186,7 @@ export function FileUploadPage() {
             <div className="w-14 h-14 rounded-full bg-primary-lighter flex items-center justify-center">
               <Camera className="h-7 w-7 text-primary" />
             </div>
-            <span className="text-sm font-medium text-dark">Scan Invoice</span>
+            <span className="text-sm font-medium text-dark">{t('fileUpload.scanInvoice')}</span>
           </button>
 
           <button
@@ -193,7 +196,7 @@ export function FileUploadPage() {
             <div className="w-14 h-14 rounded-full bg-info-light flex items-center justify-center">
               <Upload className="h-7 w-7 text-info" />
             </div>
-            <span className="text-sm font-medium text-dark">Upload File</span>
+            <span className="text-sm font-medium text-dark">{t('fileUpload.uploadFile')}</span>
           </button>
         </div>
 
@@ -216,7 +219,7 @@ export function FileUploadPage() {
         {uploadMutation.isPending && (
           <div className="bg-white rounded-[12px] p-4 shadow-sm">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-medium text-dark">Uploading...</p>
+              <p className="text-sm font-medium text-dark">{t('fileUpload.uploading')}</p>
               <span className="text-xs text-gray">{uploadProgress}%</span>
             </div>
             <ProgressBar value={uploadProgress} className="h-1.5" />
@@ -225,7 +228,7 @@ export function FileUploadPage() {
 
         {/* Files list */}
         <div>
-          <h2 className="text-sm font-semibold text-dark mb-2">{files.length} files</h2>
+          <h2 className="text-sm font-semibold text-dark mb-2">{t('fileUpload.filesCount', { count: files.length })}</h2>
           {filesLoading ? (
             <div className="space-y-2">
               <ListItemSkeleton />
@@ -252,7 +255,7 @@ export function FileUploadPage() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-dark truncate">{f.filename}</p>
                       <p className="text-xs text-gray mt-0.5">
-                        {formatSize(f.size)} - {new Date(f.created_at).toLocaleDateString()}
+                        {formatSize(f.size)} - {new Date(f.created_at).toLocaleDateString(locale)}
                       </p>
                     </div>
                     <span
@@ -275,7 +278,7 @@ export function FileUploadPage() {
             {files.length === 0 && (
               <div className="text-center py-12">
                 <Upload className="h-12 w-12 text-gray-light mx-auto mb-3" />
-                <p className="text-sm text-gray">No files uploaded yet</p>
+                <p className="text-sm text-gray">{t('fileUpload.noFilesYet')}</p>
               </div>
             )}
           </div>
@@ -318,21 +321,21 @@ export function FileUploadPage() {
             className="w-full flex items-center gap-3 px-2 py-3 rounded-[12px] hover:bg-bg-alt transition-colors"
           >
             <Eye className="h-5 w-5 text-gray" />
-            <span className="text-sm font-medium text-dark">View</span>
+            <span className="text-sm font-medium text-dark">{t('fileUpload.viewAction')}</span>
           </button>
           <button
             onClick={() => { navigator.share({ title: selectedFile.filename, url: `/api/v1/files/${selectedFile.id}` }).catch(() => { navigator.clipboard.writeText(window.location.origin + `/api/v1/files/${selectedFile.id}`) }); setActionSheetOpen(false) }}
             className="w-full flex items-center gap-3 px-2 py-3 rounded-[12px] hover:bg-bg-alt transition-colors"
           >
             <Share2 className="h-5 w-5 text-gray" />
-            <span className="text-sm font-medium text-dark">Share</span>
+            <span className="text-sm font-medium text-dark">{t('fileUpload.shareAction')}</span>
           </button>
           <button
             onClick={() => deleteMutation.mutate(selectedFile.id)}
             className="w-full flex items-center gap-3 px-2 py-3 rounded-[12px] hover:bg-bg-alt transition-colors"
           >
             <Trash2 className="h-5 w-5 text-danger" />
-            <span className="text-sm font-medium text-danger">Delete</span>
+            <span className="text-sm font-medium text-danger">{t('fileUpload.deleteAction')}</span>
           </button>
         </div>
       </BottomSheet>

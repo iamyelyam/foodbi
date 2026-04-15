@@ -11,11 +11,13 @@ import { CategorySelector } from '@/components/CategorySelector'
 import { Minus, Plus } from 'lucide-react'
 import api from '@/lib/api'
 import { useAppStore, useCurrency } from '@/stores/app'
+import { useT } from '@/i18n'
 
 interface Item { product_name: string; category: string; quantity: number; unit: string; price_per_unit: number }
 
 export function CreateSupplyPage() {
   const navigate = useNavigate()
+  const t = useT()
   const cs = useCurrency()
   const activeLocationId = useAppStore((s) => s.activeLocationId)
   const [step, setStep] = useState(0)
@@ -26,7 +28,13 @@ export function CreateSupplyPage() {
   const [newItem, setNewItem] = useState({ product_name: '', category: '', unit: 'kg', price_per_unit: 0 })
   const [showSuccess, setShowSuccess] = useState(false)
 
-  const steps = ['Supplier', 'Category', 'Add Products', 'Quantities', 'Review']
+  const steps = [
+    t('supplying.supplierLabel'),
+    t('transfers.categoryStep'),
+    t('supplying.addProductsStep'),
+    t('transfers.quantitiesStep'),
+    t('transfers.reviewStep'),
+  ]
   const progress = ((step + 1) / steps.length) * 100
 
   const mutation = useMutation({
@@ -68,13 +76,13 @@ export function CreateSupplyPage() {
       <Header title={steps[step]} showBack />
       <div className="px-4 pt-2 pb-4">
         <ProgressBar value={progress} />
-        <p className="text-xs text-gray mt-1">Step {step + 1} of {steps.length}</p>
+        <p className="text-xs text-gray mt-1">{t('common.stepOf', { step: step + 1, total: steps.length })}</p>
       </div>
 
       <div className="flex-1 px-4 pb-4 overflow-y-auto">
         {step === 0 && (
           <div className="space-y-4">
-            <Input label="Supplier name" placeholder="Enter supplier" value={supplier} onChange={(e) => setSupplier(e.target.value)} />
+            <Input label={t('supplying.supplierLabel')} placeholder={t('supplying.supplierNamePh')} value={supplier} onChange={(e) => setSupplier(e.target.value)} />
           </div>
         )}
 
@@ -86,23 +94,23 @@ export function CreateSupplyPage() {
           <div className="space-y-3">
             {selectedCategory && (
               <div className="bg-primary/5 rounded-[12px] px-4 py-2 mb-1">
-                <p className="text-xs text-gray">Category</p>
+                <p className="text-xs text-gray">{t('transfers.categoryStep')}</p>
                 <p className="text-sm font-semibold text-primary">{selectedCategory}</p>
               </div>
             )}
-            <SearchBar placeholder="Search products..." value={search} onChange={(e) => setSearch(e.target.value)} onClear={() => setSearch('')} />
+            <SearchBar placeholder={t('supplying.searchProductsPh')} value={search} onChange={(e) => setSearch(e.target.value)} onClear={() => setSearch('')} />
             <div className="bg-bg rounded-[12px] p-3 space-y-3">
-              <Input placeholder="Product name" value={newItem.product_name} onChange={(e) => setNewItem({ ...newItem, product_name: e.target.value })} />
+              <Input placeholder={t('transfers.productNamePh')} value={newItem.product_name} onChange={(e) => setNewItem({ ...newItem, product_name: e.target.value })} />
               <div className="grid grid-cols-2 gap-2">
-                <Input placeholder="Category" value={selectedCategory} disabled />
-                <Input placeholder="Unit" value={newItem.unit} onChange={(e) => setNewItem({ ...newItem, unit: e.target.value })} />
+                <Input placeholder={t('transfers.categoryStep')} value={selectedCategory} disabled />
+                <Input placeholder={t('transfers.unitPh')} value={newItem.unit} onChange={(e) => setNewItem({ ...newItem, unit: e.target.value })} />
               </div>
-              <Button size="sm" onClick={addItem} disabled={!newItem.product_name}>Add Product</Button>
+              <Button size="sm" onClick={addItem} disabled={!newItem.product_name}>{t('supplying.addProductBtn')}</Button>
             </div>
             {items.map((item, idx) => (
               <div key={idx} className="flex items-center justify-between bg-bg-alt rounded-[10px] px-3 py-2">
                 <span className="text-sm text-dark">{item.product_name}</span>
-                <button onClick={() => removeItem(idx)} className="text-xs text-danger">Remove</button>
+                <button onClick={() => removeItem(idx)} className="text-xs text-danger">{t('common.remove')}</button>
               </div>
             ))}
           </div>
@@ -125,7 +133,7 @@ export function CreateSupplyPage() {
                     <span className="text-xs text-gray">{item.unit}</span>
                   </div>
                   <div className="w-24">
-                    <Input placeholder="Price" type="number" value={item.price_per_unit || ''} onChange={(e) => updatePrice(idx, Number(e.target.value))} />
+                    <Input placeholder={t('supplying.pricePh')} type="number" value={item.price_per_unit || ''} onChange={(e) => updatePrice(idx, Number(e.target.value))} />
                   </div>
                 </div>
               </div>
@@ -136,7 +144,7 @@ export function CreateSupplyPage() {
         {step === 4 && (
           <div className="space-y-3">
             <div className="bg-bg rounded-[12px] p-4">
-              <p className="text-sm text-gray">Supplier</p>
+              <p className="text-sm text-gray">{t('supplying.supplierLabel')}</p>
               <p className="text-base font-semibold text-dark">{supplier}</p>
             </div>
             {items.map((item, idx) => (
@@ -149,7 +157,7 @@ export function CreateSupplyPage() {
               </div>
             ))}
             <div className="flex items-center justify-between bg-primary/5 rounded-[12px] px-4 py-3">
-              <span className="text-sm font-semibold text-dark">Total</span>
+              <span className="text-sm font-semibold text-dark">{t('supplying.totalLabel')}</span>
               <span className="text-lg font-bold text-primary">{total.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</span>
             </div>
           </div>
@@ -157,15 +165,15 @@ export function CreateSupplyPage() {
       </div>
 
       <div className="px-4 pb-8 flex gap-3">
-        {step > 0 && <Button variant="secondary" fullWidth onClick={() => setStep(step - 1)}>Back</Button>}
+        {step > 0 && <Button variant="secondary" fullWidth onClick={() => setStep(step - 1)}>{t('common.back')}</Button>}
         {step < 4 ? (
           <Button fullWidth onClick={() => setStep(step + 1)}
             disabled={(step === 0 && !supplier) || (step === 1 && !selectedCategory) || (step === 2 && items.length === 0)}>
-            Next
+            {t('common.next')}
           </Button>
         ) : (
           <Button fullWidth onClick={handleSubmit} disabled={mutation.isPending}>
-            {mutation.isPending ? 'Submitting...' : 'Confirm Request'}
+            {mutation.isPending ? t('supplying.submittingBtn') : t('supplying.confirmReqBtn')}
           </Button>
         )}
       </div>
@@ -173,7 +181,7 @@ export function CreateSupplyPage() {
       <Snackbar
         isOpen={showSuccess}
         onClose={() => setShowSuccess(false)}
-        message="Supply request created successfully"
+        message={t('supplying.submittedSuccess')}
         type="success"
       />
     </div>

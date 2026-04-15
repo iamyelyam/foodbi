@@ -12,6 +12,7 @@ import { Plus, User, Shield, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
 import { useT } from '@/i18n'
+import { EMPLOYEE_ROLES, findRoleLabel } from '@/lib/employeeRoles'
 
 export function EmployeesPage() {
   const t = useT()
@@ -19,7 +20,7 @@ export function EmployeesPage() {
   const queryClient = useQueryClient()
   const { data: unreadCount = 0 } = useUnreadNotificationCount()
   const [showAdd, setShowAdd] = useState(false)
-  const [form, setForm] = useState({ first_name: '', last_name: '', email: '', phone: '', password: '', role: 'employee' })
+  const [form, setForm] = useState({ first_name: '', last_name: '', email: '', phone: '', password: '', role: EMPLOYEE_ROLES[0].id })
 
   const { data: employees = [], isLoading } = useQuery({
     queryKey: ['employees'],
@@ -31,7 +32,7 @@ export function EmployeesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['employees'] })
       setShowAdd(false)
-      setForm({ first_name: '', last_name: '', email: '', phone: '', password: '', role: 'employee' })
+      setForm({ first_name: '', last_name: '', email: '', phone: '', password: '', role: EMPLOYEE_ROLES[0].id })
     },
   })
 
@@ -42,9 +43,9 @@ export function EmployeesPage() {
       <Header title={t('employees.title')} showBack showNotification badgeCount={unreadCount} />
 
       <div className="px-4 pt-3 pb-3 flex items-center justify-between">
-        <span className="text-xs text-gray">{employees.length} employees</span>
+        <span className="text-xs text-gray">{t('employees.countLabel', { count: employees.length })}</span>
         <button onClick={() => navigate('/employees/new')} className="flex items-center gap-1 text-sm font-medium text-primary">
-          <Plus className="h-4 w-4" /> Add
+          <Plus className="h-4 w-4" /> {t('common.add')}
         </button>
       </div>
 
@@ -74,10 +75,10 @@ export function EmployeesPage() {
               </div>
               <div className="flex items-center gap-2">
                 <span className={cn(
-                  'text-xs px-2 py-0.5 rounded-full font-medium capitalize',
+                  'text-xs px-2 py-0.5 rounded-full font-medium',
                   emp.role === 'owner' ? 'bg-warning/10 text-warning' : 'bg-primary-lighter text-primary'
                 )}>
-                  {emp.role}
+                  {findRoleLabel(emp.role)}
                 </span>
                 <ChevronRight className="h-4 w-4 text-gray-light" />
               </div>
@@ -88,7 +89,7 @@ export function EmployeesPage() {
         {employees.length === 0 && (
           <div className="text-center py-12">
             <User className="h-12 w-12 text-gray-light mx-auto mb-3" />
-            <p className="text-sm text-gray">No employees yet</p>
+            <p className="text-sm text-gray">{t('employees.noEmployeesYet')}</p>
           </div>
         )}
         </>
@@ -97,25 +98,26 @@ export function EmployeesPage() {
 
       <Tabbar />
 
-      <BottomSheet isOpen={showAdd} onClose={() => setShowAdd(false)} title="Add Employee">
+      <BottomSheet isOpen={showAdd} onClose={() => setShowAdd(false)} title={t('employees.addEmployee')}>
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
-            <Input label="First name" value={form.first_name} onChange={(e) => update('first_name', e.target.value)} />
-            <Input label="Last name" value={form.last_name} onChange={(e) => update('last_name', e.target.value)} />
+            <Input label={t('common.firstName')} value={form.first_name} onChange={(e) => update('first_name', e.target.value)} />
+            <Input label={t('common.lastName')} value={form.last_name} onChange={(e) => update('last_name', e.target.value)} />
           </div>
-          <Input label="Email" type="email" value={form.email} onChange={(e) => update('email', e.target.value)} />
-          <Input label="Phone" value={form.phone} onChange={(e) => update('phone', e.target.value)} />
-          <Input label="Password" type="password" value={form.password} onChange={(e) => update('password', e.target.value)} />
+          <Input label={t('common.email')} type="email" value={form.email} onChange={(e) => update('email', e.target.value)} />
+          <Input label={t('common.phone')} value={form.phone} onChange={(e) => update('phone', e.target.value)} />
+          <Input label={t('common.password')} type="password" value={form.password} onChange={(e) => update('password', e.target.value)} />
           <div>
-            <label className="text-sm font-medium text-gray">Role</label>
+            <label className="text-sm font-medium text-gray">{t('employees.role')}</label>
             <select className="w-full mt-1 h-12 rounded-[12px] border border-bg-alt px-4 bg-white"
               value={form.role} onChange={(e) => update('role', e.target.value)}>
-              <option value="employee">Employee</option>
-              <option value="owner">Owner</option>
+              {EMPLOYEE_ROLES.map((r) => (
+                <option key={r.id} value={r.id}>{r.label}</option>
+              ))}
             </select>
           </div>
           <Button fullWidth onClick={() => addMutation.mutate(form)} disabled={addMutation.isPending || !form.email || !form.first_name}>
-            {addMutation.isPending ? 'Adding...' : 'Add Employee'}
+            {addMutation.isPending ? t('common.adding') : t('employees.addEmployee')}
           </Button>
         </div>
       </BottomSheet>

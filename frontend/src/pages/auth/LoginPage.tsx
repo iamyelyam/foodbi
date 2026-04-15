@@ -41,7 +41,7 @@ export function LoginPage() {
       setTokens(res.data.access_token, res.data.refresh_token)
       navigate('/')
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Login failed')
+      setError(err.response?.data?.error || t('auth.loginFailed'))
     } finally {
       setLoading(false)
     }
@@ -68,9 +68,9 @@ export function LoginPage() {
       {step === 'email' ? (
         <form onSubmit={emailForm.handleSubmit(handleEmailNext)} className="flex flex-col flex-1 px-4 gap-4">
           <Input
-            label="Email"
+            label={t('common.email')}
             type="email"
-            placeholder="your@email.com"
+            placeholder={t('auth.emailPlaceholder')}
             autoFocus
             error={emailForm.formState.errors.email?.message}
             {...emailForm.register('email')}
@@ -86,9 +86,9 @@ export function LoginPage() {
       ) : (
         <form onSubmit={passForm.handleSubmit(handleLogin)} className="flex flex-col flex-1 px-4 gap-4">
           <Input
-            label="Password"
+            label={t('common.password')}
             type="password"
-            placeholder="Enter password"
+            placeholder={t('auth.passwordPlaceholder')}
             autoFocus
             autoComplete="current-password"
             onFocus={(e) => e.target.select()}

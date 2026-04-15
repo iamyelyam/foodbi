@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import api from '@/lib/api'
+import { useT } from '@/i18n'
 
 const registerSchema = z.object({
   first_name: z.string().min(1, 'Required'),
@@ -19,6 +20,7 @@ type RegisterForm = z.infer<typeof registerSchema>
 
 export function RegisterPage() {
   const navigate = useNavigate()
+  const t = useT()
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -33,7 +35,7 @@ export function RegisterPage() {
       await api.post('/auth/register', { ...data, role: 'owner' })
       navigate('/verify-otp', { state: { email: data.email } })
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Registration failed')
+      setError(err.response?.data?.error || t('auth.registrationFailed'))
     } finally {
       setLoading(false)
     }
@@ -42,42 +44,42 @@ export function RegisterPage() {
   return (
     <div className="flex flex-col min-h-dvh bg-white">
       <div className="px-4 pt-16 pb-6">
-        <h1 className="text-2xl font-bold text-dark">Sign up</h1>
-        <p className="mt-2 text-sm text-gray">Create your FoodBI account</p>
+        <h1 className="text-2xl font-bold text-dark">{t('auth.signUp')}</h1>
+        <p className="mt-2 text-sm text-gray">{t('auth.createFoodBIAccount')}</p>
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-1 px-4 gap-4">
         <Input
-          label="Company name"
-          placeholder="Your restaurant name"
+          label={t('auth.companyName')}
+          placeholder={t('auth.companyNamePh')}
           error={errors.company_name?.message}
           {...register('company_name')}
         />
         <div className="grid grid-cols-2 gap-3">
           <Input
-            label="First name"
-            placeholder="John"
+            label={t('common.firstName')}
+            placeholder={t('auth.johnPh')}
             error={errors.first_name?.message}
             {...register('first_name')}
           />
           <Input
-            label="Last name"
-            placeholder="Doe"
+            label={t('common.lastName')}
+            placeholder={t('auth.doePh')}
             error={errors.last_name?.message}
             {...register('last_name')}
           />
         </div>
         <Input
-          label="Email"
+          label={t('common.email')}
           type="email"
-          placeholder="your@email.com"
+          placeholder={t('auth.emailPlaceholder')}
           error={errors.email?.message}
           {...register('email')}
         />
         <Input
-          label="Password"
+          label={t('common.password')}
           type="password"
-          placeholder="Minimum 8 characters"
+          placeholder={t('auth.min8Placeholder')}
           error={errors.password?.message}
           {...register('password')}
         />
@@ -86,14 +88,14 @@ export function RegisterPage() {
 
         <div className="mt-auto pb-8">
           <Button type="submit" fullWidth disabled={loading}>
-            {loading ? 'Creating account...' : 'Create account'}
+            {loading ? t('auth.creatingAccount') : t('auth.createAccount')}
           </Button>
           <button
             type="button"
             onClick={() => navigate('/login')}
             className="mt-4 w-full text-center text-sm text-primary font-medium"
           >
-            Already have an account? Sign in
+            {t('auth.alreadyHaveAccount')}
           </button>
         </div>
       </form>

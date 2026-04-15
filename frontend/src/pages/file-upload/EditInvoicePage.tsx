@@ -7,13 +7,15 @@ import { Input } from '@/components/ui/input'
 import { Snackbar } from '@/components/ui/snackbar'
 import api from '@/lib/api'
 import { useCurrency } from '@/stores/app'
+import { useT } from '@/i18n'
 
 export function EditInvoicePage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
+  const t = useT()
   const cs = useCurrency()
-  const [supplier, setSupplier] = useState('La Conga De Pasta')
-  const [totalAmount, setTotalAmount] = useState(`2300${cs}`)
+  const [supplier, setSupplier] = useState('')
+  const [totalAmount, setTotalAmount] = useState('')
   const [invoiceDate, setInvoiceDate] = useState('')
   const [invoiceNumber, setInvoiceNumber] = useState('')
   const [notes, setNotes] = useState('')
@@ -45,54 +47,54 @@ export function EditInvoicePage() {
 
   return (
     <div className="flex flex-col min-h-dvh bg-white">
-      <Header title="Edit Invoice" showBack />
+      <Header title={t('editInvoice.title')} showBack />
 
       <div className="flex flex-col flex-1 px-4 pt-4 gap-4">
         <Input
-          label="Supplier"
-          placeholder="Enter supplier name"
+          label={t('editInvoice.supplierLabel')}
+          placeholder={t('editInvoice.supplierPh')}
           value={supplier}
           onChange={(e) => setSupplier(e.target.value)}
         />
 
         <Input
-          label="Total invoice amount"
+          label={t('editInvoice.totalAmountLabel')}
           placeholder={`0${cs}`}
           value={totalAmount}
           onChange={(e) => setTotalAmount(e.target.value)}
         />
 
         <Input
-          label="Invoice date"
+          label={t('editInvoice.invoiceDateLabel')}
           type="date"
           value={invoiceDate}
           onChange={(e) => setInvoiceDate(e.target.value)}
         />
 
         <Input
-          label="Invoice number"
-          placeholder="Enter invoice number"
+          label={t('editInvoice.invoiceNumberLabel')}
+          placeholder={t('editInvoice.invoiceNumberPh')}
           value={invoiceNumber}
           onChange={(e) => setInvoiceNumber(e.target.value)}
         />
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-gray">Notes</label>
+          <label className="text-sm font-medium text-gray">{t('editInvoice.notesLabel')}</label>
           <textarea
             className="min-h-[100px] w-full rounded-[12px] border border-bg-alt bg-white px-4 py-3 text-base text-dark placeholder:text-gray-light focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none"
-            placeholder="Add notes..."
+            placeholder={t('editInvoice.notesPh')}
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
           />
         </div>
 
         {mutation.isError && (
-          <p className="text-sm text-danger text-center">Failed to save invoice</p>
+          <p className="text-sm text-danger text-center">{t('editInvoice.saveFailed')}</p>
         )}
 
         <div className="mt-auto pb-8">
           <Button fullWidth onClick={handleSave} disabled={mutation.isPending || !supplier}>
-            {mutation.isPending ? 'Saving...' : 'Save Invoice'}
+            {mutation.isPending ? t('common.saving') : t('editInvoice.saveBtn')}
           </Button>
         </div>
       </div>
@@ -100,7 +102,7 @@ export function EditInvoicePage() {
       <Snackbar
         isOpen={showSuccess}
         onClose={() => setShowSuccess(false)}
-        message="Invoice saved successfully"
+        message={t('editInvoice.savedSuccess')}
         type="success"
       />
     </div>

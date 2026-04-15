@@ -10,11 +10,13 @@ import { MapPin, Check, Minus, Plus } from 'lucide-react'
 import { Snackbar } from '@/components/ui/snackbar'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
+import { useT } from '@/i18n'
 
 interface Item { product_name: string; category: string; quantity: number; unit: string }
 
 export function CreateTransferPage() {
   const navigate = useNavigate()
+  const t = useT()
   const [step, setStep] = useState(0)
   const [fromLoc, setFromLoc] = useState<any>(null)
   const [toLoc, setToLoc] = useState<any>(null)
@@ -23,7 +25,14 @@ export function CreateTransferPage() {
   const [newName, setNewName] = useState('')
   const [showSuccess, setShowSuccess] = useState(false)
 
-  const steps = ['From', 'To', 'Category', 'Products', 'Quantities', 'Review']
+  const steps = [
+    t('transfers.fromStep'),
+    t('transfers.toStep'),
+    t('transfers.categoryStep'),
+    t('transfers.productsStep'),
+    t('transfers.quantitiesStep'),
+    t('transfers.reviewStep'),
+  ]
   const progress = ((step + 1) / steps.length) * 100
 
   const { data: locations = [] } = useQuery({
@@ -76,7 +85,7 @@ export function CreateTransferPage() {
       <Header title={steps[step]} showBack />
       <div className="px-4 pt-2 pb-4">
         <ProgressBar value={progress} />
-        <p className="text-xs text-gray mt-1">Step {step + 1} of {steps.length}</p>
+        <p className="text-xs text-gray mt-1">{t('common.stepOf', { step: step + 1, total: steps.length })}</p>
       </div>
 
       <div className="flex-1 px-4 pb-4 overflow-y-auto">
@@ -91,18 +100,18 @@ export function CreateTransferPage() {
           <div className="space-y-3">
             {selectedCategory && (
               <div className="bg-primary/5 rounded-[12px] px-4 py-2 mb-1">
-                <p className="text-xs text-gray">Category</p>
+                <p className="text-xs text-gray">{t('transfers.categoryStep')}</p>
                 <p className="text-sm font-semibold text-primary">{selectedCategory}</p>
               </div>
             )}
             <div className="flex gap-2">
-              <Input placeholder="Product name" value={newName} onChange={(e) => setNewName(e.target.value)} className="flex-1" />
-              <Button size="sm" onClick={addItem} disabled={!newName}>Add</Button>
+              <Input placeholder={t('transfers.productNamePh')} value={newName} onChange={(e) => setNewName(e.target.value)} className="flex-1" />
+              <Button size="sm" onClick={addItem} disabled={!newName}>{t('common.add')}</Button>
             </div>
             {items.map((item, idx) => (
               <div key={idx} className="flex items-center justify-between bg-bg rounded-[10px] px-3 py-2">
                 <span className="text-sm text-dark">{item.product_name}</span>
-                <button onClick={() => setItems(items.filter((_, i) => i !== idx))} className="text-xs text-danger">Remove</button>
+                <button onClick={() => setItems(items.filter((_, i) => i !== idx))} className="text-xs text-danger">{t('common.remove')}</button>
               </div>
             ))}
           </div>
@@ -131,10 +140,10 @@ export function CreateTransferPage() {
         {step === 5 && (
           <div className="space-y-3">
             <div className="bg-bg rounded-[12px] p-4 space-y-2">
-              <div className="flex justify-between text-sm"><span className="text-gray">From</span><span className="font-semibold text-dark">{fromLoc?.name}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-gray">To</span><span className="font-semibold text-dark">{toLoc?.name}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-gray">Category</span><span className="font-semibold text-dark">{selectedCategory}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-gray">Items</span><span className="font-semibold text-dark">{items.length}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-gray">{t('transfers.fromStep')}</span><span className="font-semibold text-dark">{fromLoc?.name}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-gray">{t('transfers.toStep')}</span><span className="font-semibold text-dark">{toLoc?.name}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-gray">{t('transfers.categoryStep')}</span><span className="font-semibold text-dark">{selectedCategory}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-gray">{t('transfers.itemsLabel')}</span><span className="font-semibold text-dark">{items.length}</span></div>
             </div>
             {items.map((item, idx) => (
               <div key={idx} className="flex items-center justify-between bg-bg rounded-[10px] px-4 py-2">
@@ -147,16 +156,16 @@ export function CreateTransferPage() {
       </div>
 
       <div className="px-4 pb-8 flex gap-3">
-        {step > 0 && <Button variant="secondary" fullWidth onClick={() => setStep(step - 1)}>Back</Button>}
+        {step > 0 && <Button variant="secondary" fullWidth onClick={() => setStep(step - 1)}>{t('common.back')}</Button>}
         {step < 5 ? (
           <Button fullWidth onClick={() => setStep(step + 1)}
             disabled={(step === 0 && !fromLoc) || (step === 1 && !toLoc) || (step === 2 && !selectedCategory) || (step === 3 && items.length === 0)}>
-            Next
+            {t('common.next')}
           </Button>
         ) : (
           <Button fullWidth onClick={() => mutation.mutate({ from_location_id: fromLoc.id, to_location_id: toLoc.id, items })}
             disabled={mutation.isPending}>
-            {mutation.isPending ? 'Creating...' : 'Confirm Transfer'}
+            {mutation.isPending ? t('common.creating') : t('transfers.confirmBtn')}
           </Button>
         )}
       </div>
@@ -164,7 +173,7 @@ export function CreateTransferPage() {
       <Snackbar
         isOpen={showSuccess}
         onClose={() => setShowSuccess(false)}
-        message="Transfer created successfully"
+        message={t('transfers.createdSuccess')}
         type="success"
       />
     </div>

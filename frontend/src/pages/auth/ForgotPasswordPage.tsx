@@ -4,9 +4,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ChevronLeft, Mail } from 'lucide-react'
 import api from '@/lib/api'
+import { useT } from '@/i18n'
 
 export function ForgotPasswordPage() {
   const navigate = useNavigate()
+  const t = useT()
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -30,11 +32,11 @@ export function ForgotPasswordPage() {
         <div className="w-20 h-20 rounded-full bg-primary-lighter flex items-center justify-center mb-6">
           <Mail className="h-10 w-10 text-primary" />
         </div>
-        <h1 className="text-xl font-bold text-dark">Check your email</h1>
+        <h1 className="text-xl font-bold text-dark">{t('auth.checkEmail')}</h1>
         <p className="mt-2 text-sm text-gray max-w-[280px]">
-          If an account exists for {email}, we've sent a password reset link.
+          {t('auth.resetLinkSent', { email })}
         </p>
-        <Button className="mt-8" onClick={() => navigate('/login')}>Back to Login</Button>
+        <Button className="mt-8" onClick={() => navigate('/login')}>{t('auth.backToLogin')}</Button>
       </div>
     )
   }
@@ -46,17 +48,17 @@ export function ForgotPasswordPage() {
       </button>
 
       <div className="px-4 pt-8 pb-6">
-        <h1 className="text-2xl font-bold text-dark">Forgot password?</h1>
-        <p className="mt-2 text-sm text-gray">Enter your email and we'll send a reset link</p>
+        <h1 className="text-2xl font-bold text-dark">{t('auth.forgotPasswordTitle')}</h1>
+        <p className="mt-2 text-sm text-gray">{t('auth.forgotPasswordDesc')}</p>
       </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col flex-1 px-4 gap-4">
-        <Input label="Email" type="email" placeholder="your@email.com"
+        <Input label={t('common.email')} type="email" placeholder={t('auth.emailPlaceholder')}
           value={email} onChange={(e) => setEmail(e.target.value)} />
 
         <div className="mt-auto pb-8">
           <Button type="submit" fullWidth disabled={loading || !email}>
-            {loading ? 'Sending...' : 'Send reset link'}
+            {loading ? t('auth.sending') : t('auth.sendResetLink')}
           </Button>
         </div>
       </form>

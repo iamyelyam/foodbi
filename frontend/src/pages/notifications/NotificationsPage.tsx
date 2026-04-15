@@ -6,7 +6,7 @@ import { Tabbar } from '@/components/layout/Tabbar'
 import { AlertTriangle, CheckCircle, XCircle, RefreshCw, Bell } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
-import { useT } from '@/i18n'
+import { useT, useI18nStore } from '@/i18n'
 
 const typeConfig: Record<string, { icon: typeof Bell; color: string }> = {
   low_stock: { icon: AlertTriangle, color: 'text-danger bg-danger/10' },
@@ -30,6 +30,7 @@ function getDateGroup(dateStr: string): 'today' | 'yesterday' | 'earlier' {
 
 export function NotificationsPage() {
   const t = useT()
+  const locale = useI18nStore((s) => s.locale)
   const queryClient = useQueryClient()
 
   const { data: notifications = [], isLoading } = useQuery({
@@ -130,7 +131,7 @@ export function NotificationsPage() {
                         </div>
                         <p className="text-xs text-gray mt-0.5 line-clamp-2">{n.message}</p>
                         <p className="text-[10px] text-gray-light mt-1">
-                          {new Date(n.created_at).toLocaleString()}
+                          {new Date(n.created_at).toLocaleString(locale)}
                         </p>
                       </div>
                     </div>

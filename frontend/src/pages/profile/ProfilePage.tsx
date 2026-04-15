@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Toggle } from '@/components/ui/toggle'
 import { useAuthStore } from '@/stores/auth'
+import { useAppStore } from '@/stores/app'
 import { User, Mail, Phone, Building2, LogOut, Users, MapPin } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
@@ -24,6 +25,8 @@ export function ProfilePage() {
   const [formErrors, setFormErrors] = useState<{ first_name?: string; last_name?: string }>({})
   const [notifications, setNotifications] = useState(true)
   const [faceId, setFaceId] = useState(false)
+  const showUploadInvoicesBanner = useAppStore((s) => s.uiPrefs.showUploadInvoicesBanner)
+  const setUiPref = useAppStore((s) => s.setUiPref)
 
   const { data: profile } = useQuery({
     queryKey: ['profile'],
@@ -77,21 +80,21 @@ export function ProfilePage() {
             <div className="flex items-center gap-3">
               <Mail className="h-5 w-5 text-gray" />
               <div>
-                <p className="text-xs text-gray">Email</p>
+                <p className="text-xs text-gray">{t('common.email')}</p>
                 <p className="text-sm text-dark">{profile?.email}</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
               <Phone className="h-5 w-5 text-gray" />
               <div>
-                <p className="text-xs text-gray">Phone</p>
-                <p className="text-sm text-dark">{profile?.phone || 'Not set'}</p>
+                <p className="text-xs text-gray">{t('common.phone')}</p>
+                <p className="text-sm text-dark">{profile?.phone || t('common.notSet')}</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
               <Building2 className="h-5 w-5 text-gray" />
               <div>
-                <p className="text-xs text-gray">Company</p>
+                <p className="text-xs text-gray">{t('profile.company')}</p>
                 <p className="text-sm text-dark">{profile?.company_name}</p>
               </div>
             </div>
@@ -101,23 +104,23 @@ export function ProfilePage() {
           </div>
         ) : (
           <div className="bg-white rounded-[16px] p-4 shadow-sm space-y-4">
-            <Input label="First name" value={form.first_name} onChange={(e) => { setForm((f) => ({ ...f, first_name: e.target.value })); setFormErrors((e) => ({ ...e, first_name: undefined })) }} error={formErrors.first_name} />
-            <Input label="Last name" value={form.last_name} onChange={(e) => { setForm((f) => ({ ...f, last_name: e.target.value })); setFormErrors((e) => ({ ...e, last_name: undefined })) }} error={formErrors.last_name} />
-            <Input label="Phone" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
+            <Input label={t('common.firstName')} value={form.first_name} onChange={(e) => { setForm((f) => ({ ...f, first_name: e.target.value })); setFormErrors((e) => ({ ...e, first_name: undefined })) }} error={formErrors.first_name} />
+            <Input label={t('common.lastName')} value={form.last_name} onChange={(e) => { setForm((f) => ({ ...f, last_name: e.target.value })); setFormErrors((e) => ({ ...e, last_name: undefined })) }} error={formErrors.last_name} />
+            <Input label={t('common.phone')} value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
             {updateMutation.isError && (
-              <p className="text-sm text-danger text-center">Failed to update profile. Please try again.</p>
+              <p className="text-sm text-danger text-center">{t('profile.updateFailed')}</p>
             )}
             <div className="flex gap-3">
-              <Button variant="secondary" fullWidth onClick={() => { setEditing(false); setFormErrors({}) }}>Cancel</Button>
+              <Button variant="secondary" fullWidth onClick={() => { setEditing(false); setFormErrors({}) }}>{t('common.cancel')}</Button>
               <Button fullWidth onClick={() => {
                 const errors: typeof formErrors = {}
-                if (!form.first_name.trim()) errors.first_name = 'First name is required'
-                if (!form.last_name.trim()) errors.last_name = 'Last name is required'
+                if (!form.first_name.trim()) errors.first_name = t('profile.firstNameRequired')
+                if (!form.last_name.trim()) errors.last_name = t('profile.lastNameRequired')
                 if (Object.keys(errors).length > 0) { setFormErrors(errors); return }
                 setFormErrors({})
                 updateMutation.mutate(form)
               }} disabled={updateMutation.isPending}>
-                {updateMutation.isPending ? 'Saving...' : 'Save'}
+                {updateMutation.isPending ? t('common.saving') : t('common.save')}
               </Button>
             </div>
           </div>
@@ -140,6 +143,12 @@ export function ProfilePage() {
           </div>
           <Toggle label={t('profile.notifications')} checked={notifications} onChange={setNotifications} className="py-2" />
           <Toggle label={t('profile.faceId')} checked={faceId} onChange={setFaceId} className="py-2" />
+          <Toggle
+            label={t('profile.uploadInvoicesBanner')}
+            checked={showUploadInvoicesBanner}
+            onChange={(v) => setUiPref('showUploadInvoicesBanner', v)}
+            className="py-2"
+          />
         </div>
 
         {/* Quick links */}
@@ -161,7 +170,7 @@ export function ProfilePage() {
         </Button>
 
         {/* App version */}
-        <p className="text-xs text-gray text-center pb-4">FoodBI v1.0.0</p>
+        <p className="text-xs text-gray text-center pb-4">{t('profile.version', { version: '1.0.0' })}</p>
       </main>
 
       <Tabbar />

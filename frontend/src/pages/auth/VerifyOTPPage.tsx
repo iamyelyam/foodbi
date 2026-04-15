@@ -3,9 +3,11 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import api from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
+import { useT } from '@/i18n'
 
 export function VerifyOTPPage() {
   const navigate = useNavigate()
+  const t = useT()
   const location = useLocation()
   const email = (location.state as { email?: string })?.email || ''
   const { setTokens } = useAuthStore()
@@ -43,7 +45,7 @@ export function VerifyOTPPage() {
       setTokens(res.data.access_token, res.data.refresh_token)
       navigate('/')
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Verification failed')
+      setError(err.response?.data?.error || t('auth.verificationFailed'))
     } finally {
       setLoading(false)
     }
@@ -52,9 +54,9 @@ export function VerifyOTPPage() {
   return (
     <div className="flex flex-col min-h-dvh bg-white">
       <div className="px-4 pt-16 pb-8">
-        <h1 className="text-2xl font-bold text-dark">Activate your account</h1>
+        <h1 className="text-2xl font-bold text-dark">{t('auth.activateAccount')}</h1>
         <p className="mt-2 text-sm text-gray">
-          Enter the 6-digit code sent to <span className="font-medium text-dark">{email}</span>
+          {t('auth.enterOtpPrefix')} <span className="font-medium text-dark">{email}</span>
         </p>
       </div>
 
@@ -79,10 +81,10 @@ export function VerifyOTPPage() {
 
         <div className="mt-auto pb-8">
           <Button onClick={handleSubmit} fullWidth disabled={loading || code.join('').length !== 6}>
-            {loading ? 'Verifying...' : 'Verify'}
+            {loading ? t('auth.verifying') : t('auth.verify')}
           </Button>
           <button className="mt-4 w-full text-center text-sm text-primary font-medium">
-            Resend code
+            {t('auth.resendCode')}
           </button>
         </div>
       </div>

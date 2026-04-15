@@ -1,26 +1,27 @@
 import { useState, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import api from '@/lib/api'
 import { CardSkeleton } from '@/components/ui/skeleton'
 import { Header } from '@/components/layout/Header'
 import { Tabbar } from '@/components/layout/Tabbar'
 import { BottomSheet } from '@/components/layout/BottomSheet'
-import { DateRangePicker } from '@/components/ui/date-range-picker'
+import { DateRangeBlock } from '@/components/ui/date-range-block'
 import { useOrders, useProducts, useUnreadNotificationCount } from '@/hooks/useApi'
 import { Filter, ChevronRight, ShoppingBag, Calendar, Coins, ShoppingCart, Receipt, Package } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCurrency } from '@/stores/app'
-import { useT } from '@/i18n'
+import { useT, useI18nStore } from '@/i18n'
 import { formatProductName, formatPersonName } from '@/lib/format'
 import { RevenueChart } from '@/components/charts/RevenueChart'
 import { PeriodPills } from '@/components/ui/period-pills'
 
 type Tab = 'orders' | 'products'
 
-function formatDay(dateStr: string): string {
+// locale code like 'ru' / 'en' / 'kk' / 'es' — browsers tolerate ISO-639-1
+// as a BCP 47 tag and pick reasonable calendar/weekday conventions.
+function formatDay(dateStr: string, locale: string = 'en'): string {
   const d = new Date(dateStr + 'T00:00:00')
-  return d.toLocaleDateString('en', { month: 'long', day: 'numeric' })
+  return d.toLocaleDateString(locale, { month: 'long', day: 'numeric' })
 }
 
 function formatOrderDateTime(iso: string): string {
@@ -47,12 +48,12 @@ const formatMoney = (v: number) => v.toLocaleString('ru-KZ', { maximumFractionDi
 
 export function RevenuePage() {
   const t = useT()
-  const navigate = useNavigate()
+  const locale = useI18nStore((s) => s.locale)
   const cs = useCurrency()
 
   const [tab, setTab] = useState<Tab>('orders')
   const [showFilters, setShowFilters] = useState(false)
-  const [showRangePicker, setShowRangePicker] = useState(false)
+  // (date range custom picking is now embedded inside <DateRangeBlock>)
   const [dateFrom, setDateFrom] = useState<string>(todayIso())
   const [dateTo, setDateTo] = useState<string>(todayIso())
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
@@ -141,11 +142,11 @@ export function RevenuePage() {
     return { revenue, count, aov, mit }
   }, [orders])
 
-  const rangeLabel = `${formatDay(dateFrom)} - ${formatDay(dateTo)}`
+  const rangeLabel = `${formatDay(dateFrom, locale)} - ${formatDay(dateTo, locale)}`
 
   return (
     <div className="flex flex-col min-h-dvh bg-white">
-      <Header title="Revenue" showBack showNotification badgeCount={unreadCount} />
+      <Header title={t('revenue.title')} showBack showNotification badgeCount={unreadCount} />
 
       {/* Date range picker button */}
       <div className="px-4 pt-2 pb-3">
@@ -171,10 +172,10 @@ export function RevenuePage() {
                 : 'repeat(4, minmax(0, 1fr))',
           }}
         >
-          <MetricCard icon={<Coins className="h-4 w-4 text-primary" />} value={formatMoney(metrics.revenue) + cs} label="Revenue" onClick={() => setSelectedMetric('revenue')} />
-          <MetricCard icon={<ShoppingCart className="h-4 w-4 text-primary" />} value={String(metrics.count)} label="Orders" onClick={() => setSelectedMetric('orders')} />
-          <MetricCard icon={<Receipt className="h-4 w-4 text-primary" />} value={formatMoney(metrics.aov) + cs} label="AOV" onClick={() => setSelectedMetric('aov')} />
-          <MetricCard icon={<Package className="h-4 w-4 text-primary" />} value={metrics.mit.toFixed(1)} label="MI/T" onClick={() => setSelectedMetric('mit')} />
+          <MetricCard icon={<Coins className="h-4 w-4 text-primary" />} value={formatMoney(metrics.revenue) + cs} label={t('revenue.metrics.revenue')} onClick={() => setSelectedMetric('revenue')} />
+          <MetricCard icon={<ShoppingCart className="h-4 w-4 text-primary" />} value={String(metrics.count)} label={t('revenue.metrics.orders')} onClick={() => setSelectedMetric('orders')} />
+          <MetricCard icon={<Receipt className="h-4 w-4 text-primary" />} value={formatMoney(metrics.aov) + cs} label={t('revenue.metrics.aov')} onClick={() => setSelectedMetric('aov')} />
+          <MetricCard icon={<Package className="h-4 w-4 text-primary" />} value={metrics.mit.toFixed(1)} label={t('revenue.metrics.mit')} onClick={() => setSelectedMetric('mit')} />
         </div>
       </div>
 
@@ -183,10 +184,10 @@ export function RevenuePage() {
         <button
           onClick={() => setShowFilters(true)}
           className="flex flex-col items-center gap-0.5 shrink-0"
-          aria-label="Filters"
+          aria-label={t('common.filter')}
         >
           <Filter className="h-5 w-5 text-dark" />
-          <span className="text-[10px] text-gray">Filters</span>
+          <span className="text-[10px] text-gray">{t('common.filter')}</span>
         </button>
         <div className="flex-1">
           <div className="flex bg-bg rounded-full p-1">
@@ -195,11 +196,11 @@ export function RevenuePage() {
                 key={val}
                 onClick={() => setTab(val)}
                 className={cn(
-                  'flex-1 py-2 text-sm font-semibold rounded-full transition-colors capitalize',
+                  'flex-1 py-2 text-sm font-semibold rounded-full transition-colors',
                   tab === val ? 'bg-primary text-dark shadow-sm' : 'text-dark'
                 )}
               >
-                {val === 'orders' ? 'Orders' : 'Products'}
+                {val === 'orders' ? t('revenue.tabs.orders') : t('revenue.tabs.products')}
               </button>
             ))}
           </div>
@@ -226,14 +227,14 @@ export function RevenuePage() {
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm font-semibold text-dark">
-                          Order #{order.order_number || order.id?.slice(0, 6)}
+                          {t('revenue.orderNumber', { number: order.order_number || order.id?.slice(0, 6) })}
                         </p>
                         <p className="text-xs text-gray mt-0.5">
                           {formatOrderDateTime(order.order_date)}
                         </p>
                         {order.waiter_name && (
                           <p className="text-xs text-gray mt-0.5">
-                            Waiter: {formatPersonName(order.waiter_name)}
+                            {t('revenue.waiterLine', { name: formatPersonName(order.waiter_name) })}
                           </p>
                         )}
                       </div>
@@ -246,7 +247,7 @@ export function RevenuePage() {
                 {orders.length === 0 && <EmptyState label={t('revenue.orders')} />}
                 {orders.length > 0 && totalOrders > orders.length && (
                   <p className="text-xs text-gray text-center py-3">
-                    Showing {orders.length} of {totalOrders}
+                    {t('revenue.showingOf', { count: orders.length, total: totalOrders })}
                   </p>
                 )}
               </div>
@@ -270,10 +271,10 @@ export function RevenuePage() {
                           <p className="text-sm font-semibold text-dark truncate">
                             {formatProductName(p.product_name)}
                             <span className="ml-2 text-xs text-gray font-normal">
-                              {Math.round(p.total_quantity || 0)} pc.
+                              {Math.round(p.total_quantity || 0)} {t('common.piecesShort')}
                             </span>
                           </p>
-                          <p className="text-xs text-gray mt-0.5">Avg. margin</p>
+                          <p className="text-xs text-gray mt-0.5">{t('revenue.avgMargin')}</p>
                         </div>
                         <div className="text-right shrink-0">
                           <p className="text-sm font-semibold text-dark">
@@ -312,7 +313,7 @@ export function RevenuePage() {
             {/* Header row */}
             <div className="flex items-baseline justify-between">
               <p className="text-lg font-bold text-dark">
-                Order #{orderDetail.order_number || orderDetail.id?.slice(0, 6)}
+                {t('revenue.orderNumber', { number: orderDetail.order_number || orderDetail.id?.slice(0, 6) })}
               </p>
               <div className="text-right">
                 <p className="text-sm text-gray">
@@ -320,7 +321,7 @@ export function RevenuePage() {
                 </p>
                 {orderDetail.waiter_name && (
                   <p className="text-xs text-gray mt-0.5">
-                    Waiter: {formatPersonName(orderDetail.waiter_name)}
+                    {t('revenue.waiterLine', { name: formatPersonName(orderDetail.waiter_name) })}
                   </p>
                 )}
               </div>
@@ -332,13 +333,13 @@ export function RevenuePage() {
                 <p className="text-sm font-bold text-dark">
                   {formatMoney(orderDetail.revenue || 0)}{cs}
                 </p>
-                <p className="text-[10px] text-gray mt-0.5">Total</p>
+                <p className="text-[10px] text-gray mt-0.5">{t('revenue.totalLabel')}</p>
               </div>
               <div className="bg-bg rounded-[12px] p-3">
                 <p className="text-sm font-bold text-dark">
                   {formatMoney(orderDetail.total_cost || 0)}{cs}
                 </p>
-                <p className="text-[10px] text-gray mt-0.5">Expenses</p>
+                <p className="text-[10px] text-gray mt-0.5">{t('revenue.expenses')}</p>
               </div>
               <div className="bg-bg rounded-[12px] p-3">
                 <p
@@ -349,7 +350,7 @@ export function RevenuePage() {
                 >
                   {formatMoney(orderDetail.profit || 0)}{cs}
                 </p>
-                <p className="text-[10px] text-gray mt-0.5">Profit</p>
+                <p className="text-[10px] text-gray mt-0.5">{t('revenue.profit')}</p>
               </div>
             </div>
 
@@ -362,7 +363,7 @@ export function RevenuePage() {
                       {formatProductName(item.product_name)}
                     </span>
                     <span className="ml-2 text-xs text-gray font-normal">
-                      {Math.round(item.quantity || 0)} pc.
+                      {Math.round(item.quantity || 0)} {t('common.piecesShort')}
                     </span>
                   </p>
                   <p className="text-sm font-bold text-dark shrink-0">
@@ -371,7 +372,7 @@ export function RevenuePage() {
                 </div>
               ))}
               {(!orderDetail.items || orderDetail.items.length === 0) && (
-                <p className="text-center text-sm text-gray py-4">No items</p>
+                <p className="text-center text-sm text-gray py-4">{t('common.noItems')}</p>
               )}
             </div>
 
@@ -379,7 +380,7 @@ export function RevenuePage() {
               onClick={() => setSelectedOrderId(null)}
               className="w-full text-center text-primary font-semibold py-2"
             >
-              Back
+              {t('common.back')}
             </button>
           </div>
         )}
@@ -388,75 +389,22 @@ export function RevenuePage() {
       {/* Filters BottomSheet */}
       <BottomSheet isOpen={showFilters} onClose={() => setShowFilters(false)}>
         <div className="space-y-5">
-          {/* Date section */}
-          <div>
-            <p className="text-base font-bold text-dark mb-3">Date</p>
-            <div className="space-y-2">
-              {(
-                [
-                  ['today', 'Today'],
-                  ['yesterday', 'Yesterday'],
-                  ['this_week', 'This week'],
-                  ['this_month', 'This month'],
-                ] as const
-              ).map(([key, label]) => {
-                const active = isPresetActive(key, dateFrom, dateTo)
-                return (
-                  <button
-                    key={key}
-                    onClick={() => {
-                      const [f, t] = presetRange(key)
-                      setDateFrom(f)
-                      setDateTo(t)
-                    }}
-                    className={cn(
-                      'w-full py-3 rounded-[12px] text-sm font-medium transition-colors',
-                      active
-                        ? 'bg-primary-lighter text-dark border-2 border-primary'
-                        : 'bg-bg text-dark'
-                    )}
-                  >
-                    {label}
-                  </button>
-                )
-              })}
-            </div>
-
-            {/* From / To inputs */}
-            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 mt-3">
-              <div>
-                <p className="text-xs text-gray mb-1">From</p>
-                <button
-                  onClick={() => setShowRangePicker(true)}
-                  className="w-full bg-bg rounded-[10px] px-3 py-2 flex items-center gap-1.5 text-xs text-dark"
-                >
-                  <Calendar className="h-3.5 w-3.5 text-gray" />
-                  <span>{formatInputDate(dateFrom)}</span>
-                </button>
-              </div>
-              <span className="text-gray mt-4">—</span>
-              <div>
-                <p className="text-xs text-gray mb-1">To</p>
-                <button
-                  onClick={() => setShowRangePicker(true)}
-                  className="w-full bg-bg rounded-[10px] px-3 py-2 flex items-center gap-1.5 text-xs text-dark"
-                >
-                  <Calendar className="h-3.5 w-3.5 text-gray" />
-                  <span>{formatInputDate(dateTo)}</span>
-                </button>
-              </div>
-            </div>
-          </div>
+          {/* Date section — shared DateRangeBlock for unified UX across pages */}
+          <DateRangeBlock
+            from={dateFrom}
+            to={dateTo}
+            onChange={(f, t) => { setDateFrom(f); setDateTo(t) }}
+          />
 
           <hr className="border-bg-alt" />
 
           {/* Price sort */}
           <div>
-            <p className="text-base font-bold text-dark mb-3">Price</p>
+            <p className="text-base font-bold text-dark mb-3">{t('revenue.priceSort')}</p>
             <div className="flex gap-2">
               {(['lowest', 'highest'] as const).map((key) => {
                 const active = sortOrder === key
-                const label = key === 'lowest' ? '↑↓ Lowest first' : '↑↓ Highest first'
+                const label = key === 'lowest' ? t('revenue.sortLowest') : t('revenue.sortHighest')
                 return (
                   <button
                     key={key}
@@ -478,7 +426,7 @@ export function RevenuePage() {
           {/* Waiter multi-select */}
           {uniqueWaiters.length > 0 && (
             <div>
-              <p className="text-base font-bold text-dark mb-3">Waiter</p>
+              <p className="text-base font-bold text-dark mb-3">{t('revenue.waiterFilter')}</p>
               <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto">
                 {uniqueWaiters.map((w: any) => {
                   const active = waiters.has(w as string)
@@ -512,7 +460,10 @@ export function RevenuePage() {
           <div className="flex bg-bg rounded-full p-1">
             {(['delivery', 'takeaway', 'dine-in'] as const).map((key) => {
               const active = orderTypes.has(key)
-              const label = key === 'dine-in' ? 'Dine-in' : key.charAt(0).toUpperCase() + key.slice(1)
+              const label =
+                key === 'dine-in' ? t('revenue.orderType.dineIn')
+                : key === 'delivery' ? t('revenue.orderType.delivery')
+                : t('revenue.orderType.takeaway')
               return (
                 <button
                   key={key}
@@ -539,13 +490,13 @@ export function RevenuePage() {
             onClick={() => setShowFilters(false)}
             className="w-full bg-primary text-dark font-bold py-3 rounded-full"
           >
-            Show {orders.length} results
+            {t('common.showResults', { count: orders.length })}
           </button>
           <button
             onClick={() => setShowFilters(false)}
             className="w-full text-center text-primary font-semibold"
           >
-            Back
+            {t('common.back')}
           </button>
         </div>
       </BottomSheet>
@@ -567,7 +518,7 @@ export function RevenuePage() {
               </p>
               {selectedProduct.product_id && (
                 <p className="text-xs text-gray flex items-center gap-1.5">
-                  <span>Product ID: {selectedProduct.product_id}</span>
+                  <span>{t('revenue.productId', { id: selectedProduct.product_id })}</span>
                 </p>
               )}
             </div>
@@ -578,7 +529,7 @@ export function RevenuePage() {
                 <p className="text-sm font-bold text-dark">
                   {Math.round(selectedProduct.total_quantity || 0)}
                 </p>
-                <p className="text-[10px] text-gray mt-0.5">Items sold</p>
+                <p className="text-[10px] text-gray mt-0.5">{t('revenue.itemsSold')}</p>
               </div>
               <div className="bg-bg rounded-[12px] p-3">
                 <p className="text-sm font-bold text-dark">
@@ -589,14 +540,14 @@ export function RevenuePage() {
                   )}
                   {cs}
                 </p>
-                <p className="text-[10px] text-gray mt-0.5">Avg. Price</p>
+                <p className="text-[10px] text-gray mt-0.5">{t('revenue.avgPrice')}</p>
               </div>
               <div className="bg-bg rounded-[12px] p-3">
                 <p className="text-sm font-bold text-dark">
                   {formatMoney(selectedProduct.total_revenue || 0)}
                   {cs}
                 </p>
-                <p className="text-[10px] text-gray mt-0.5">Total Sales</p>
+                <p className="text-[10px] text-gray mt-0.5">{t('revenue.totalSales')}</p>
               </div>
             </div>
 
@@ -612,21 +563,21 @@ export function RevenuePage() {
               return (
                 <div className="grid grid-cols-3 gap-2">
                   <div className="bg-bg rounded-[12px] p-3">
-                    <p className="text-[11px] text-gray">Avg Daily</p>
+                    <p className="text-[11px] text-gray">{t('revenue.avgDaily')}</p>
                     <p className="text-sm font-bold text-dark mt-1">
                       {formatMoney(avg)}
                       {cs}
                     </p>
                   </div>
                   <div className="bg-bg rounded-[12px] p-3">
-                    <p className="text-[11px] text-gray">Best Day</p>
+                    <p className="text-[11px] text-gray">{t('revenue.bestDay')}</p>
                     <p className="text-sm font-bold text-success mt-1">
                       {formatMoney(best)}
                       {cs}
                     </p>
                   </div>
                   <div className="bg-bg rounded-[12px] p-3">
-                    <p className="text-[11px] text-gray">Worst Day</p>
+                    <p className="text-[11px] text-gray">{t('revenue.worstDay')}</p>
                     <p className="text-sm font-bold text-danger mt-1">
                       {formatMoney(worst)}
                       {cs}
@@ -639,7 +590,7 @@ export function RevenuePage() {
             {/* Statistics chart — last 30 days */}
             {productTrend.length > 0 && (
               <div>
-                <p className="text-base font-bold text-dark mb-2">Statistics</p>
+                <p className="text-base font-bold text-dark mb-2">{t('revenue.statistics')}</p>
                 <RevenueChart
                   data={productTrend.map((d: any) => ({
                     date: d.date,
@@ -654,7 +605,7 @@ export function RevenuePage() {
             {/* Category row */}
             {selectedProduct.category && (
               <div className="border-t border-bg-alt pt-3 flex items-center justify-between">
-                <p className="text-sm font-bold text-dark">Category</p>
+                <p className="text-sm font-bold text-dark">{t('revenue.category')}</p>
                 <p className="text-sm text-dark">{formatProductName(selectedProduct.category)}</p>
               </div>
             )}
@@ -663,7 +614,7 @@ export function RevenuePage() {
               onClick={() => setSelectedProduct(null)}
               className="w-full text-center text-primary font-semibold py-2"
             >
-              Back
+              {t('common.back')}
             </button>
           </div>
         )}
@@ -673,10 +624,10 @@ export function RevenuePage() {
       <BottomSheet isOpen={!!selectedMetric} onClose={() => setSelectedMetric(null)}>
         {selectedMetric && (() => {
           const labels: Record<string, string> = {
-            revenue: 'Revenue',
-            orders: 'Orders',
-            aov: 'AOV',
-            mit: 'MI/T',
+            revenue: t('revenue.metrics.revenue'),
+            orders: t('revenue.metrics.orders'),
+            aov: t('revenue.metrics.aov'),
+            mit: t('revenue.metrics.mit'),
           }
           const chartData = metricTrend.map((p: any) => {
             let value = 0
@@ -701,83 +652,42 @@ export function RevenuePage() {
               <div>
                 <p className="text-base font-bold text-dark">{labels[selectedMetric]}</p>
                 <p className="text-2xl font-bold text-dark mt-1">{totalLabel}</p>
-                <p className="text-xs text-gray mt-0.5">Last {metricDays} days</p>
+                <p className="text-xs text-gray mt-0.5">{t('revenue.lastNDays', { days: metricDays })}</p>
               </div>
 
               <PeriodPills value={metricDays} onChange={setMetricDays} />
 
               {chartData.length > 0 ? (
-                <RevenueChart data={chartData} height={220} />
+                <RevenueChart
+                  data={chartData}
+                  height={220}
+                  valueFormatter={(v) => {
+                    if (selectedMetric === 'revenue' || selectedMetric === 'aov') return formatMoney(v) + cs
+                    if (selectedMetric === 'orders') return String(Math.round(v))
+                    if (selectedMetric === 'mit') return v.toFixed(1)
+                    return String(v)
+                  }}
+                />
               ) : (
-                <p className="text-sm text-gray text-center py-8">No data for this period</p>
+                <p className="text-sm text-gray text-center py-8">{t('revenue.noDataForPeriod')}</p>
               )}
 
               <button
                 onClick={() => setSelectedMetric(null)}
                 className="w-full text-center text-primary font-semibold py-2"
               >
-                Back
+                {t('common.back')}
               </button>
             </div>
           )
         })()}
       </BottomSheet>
 
-      {/* Date range picker — rendered LAST so it stacks above Filters sheet */}
-      <BottomSheet
-        isOpen={showRangePicker}
-        onClose={() => setShowRangePicker(false)}
-        title="Select period"
-      >
-        <DateRangePicker
-          startDate={dateFrom}
-          endDate={dateTo}
-          onConfirm={(start, end) => {
-            setDateFrom(start)
-            setDateTo(end)
-            setShowRangePicker(false)
-          }}
-          onBack={() => setShowRangePicker(false)}
-        />
-      </BottomSheet>
     </div>
   )
 }
 
-// --- date preset helpers ---
-function presetRange(key: 'today' | 'yesterday' | 'this_week' | 'this_month'): [string, string] {
-  const now = new Date()
-  const iso = (d: Date) => d.toISOString().split('T')[0]
-  if (key === 'today') return [iso(now), iso(now)]
-  if (key === 'yesterday') {
-    const y = new Date(now)
-    y.setDate(y.getDate() - 1)
-    return [iso(y), iso(y)]
-  }
-  if (key === 'this_week') {
-    const start = new Date(now)
-    const dow = start.getDay() === 0 ? 6 : start.getDay() - 1
-    start.setDate(start.getDate() - dow)
-    return [iso(start), iso(now)]
-  }
-  // this_month
-  const start = new Date(now.getFullYear(), now.getMonth(), 1)
-  return [iso(start), iso(now)]
-}
-
-function isPresetActive(
-  key: 'today' | 'yesterday' | 'this_week' | 'this_month',
-  from: string,
-  to: string
-): boolean {
-  const [f, t] = presetRange(key)
-  return f === from && t === to
-}
-
-function formatInputDate(iso: string): string {
-  const d = new Date(iso + 'T00:00:00')
-  return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`
-}
+// (date helpers moved to @/lib/dateRange and shared via <DateRangeBlock>)
 
 function MetricCard({
   icon,

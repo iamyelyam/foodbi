@@ -13,6 +13,7 @@ import { Plus, Clock, CheckCircle, XCircle, Truck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
 import { useCurrency } from '@/stores/app'
+import { useT, useI18nStore } from '@/i18n'
 
 type Tab = 'requests' | 'history'
 
@@ -29,6 +30,8 @@ const statusColor = {
 
 export function SupplyingPage() {
   const queryClient = useQueryClient()
+  const t = useT()
+  const locale = useI18nStore((s) => s.locale)
   const cs = useCurrency()
   const { user } = useAuthStore()
   const isOwner = user?.role === 'owner'
@@ -54,7 +57,7 @@ export function SupplyingPage() {
       setShowCreate(false)
       setSupplierName('')
       setItems([{ product_name: '', quantity: '', unit: 'kg', price_per_unit: '', category: '' }])
-      setSnackbar({ open: true, message: 'Supply request created', type: 'success' })
+      setSnackbar({ open: true, message: t('supplying.requestCreated'), type: 'success' })
     },
   })
 
@@ -62,10 +65,10 @@ export function SupplyingPage() {
     mutationFn: (id: string) => api.post(`/supplying/${id}/approve`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['supply-requests'] })
-      setSnackbar({ open: true, message: 'Request approved', type: 'success' })
+      setSnackbar({ open: true, message: t('supplying.requestApproved'), type: 'success' })
     },
     onError: () => {
-      setSnackbar({ open: true, message: 'Failed to approve', type: 'error' })
+      setSnackbar({ open: true, message: t('supplying.approveFailed'), type: 'error' })
     },
   })
 
@@ -73,10 +76,10 @@ export function SupplyingPage() {
     mutationFn: (id: string) => api.post(`/supplying/${id}/reject`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['supply-requests'] })
-      setSnackbar({ open: true, message: 'Request rejected', type: 'success' })
+      setSnackbar({ open: true, message: t('supplying.requestRejected'), type: 'success' })
     },
     onError: () => {
-      setSnackbar({ open: true, message: 'Failed to reject', type: 'error' })
+      setSnackbar({ open: true, message: t('supplying.rejectFailed'), type: 'error' })
     },
   })
 
@@ -98,33 +101,42 @@ export function SupplyingPage() {
 
   const displayedRequests = tab === 'requests' ? pendingRequests : historyRequests
 
+  const statusLabel = (s: string) =>
+    s === 'approved' ? t('supplying.statusApproved')
+      : s === 'rejected' ? t('supplying.statusRejected')
+      : t('supplying.statusPending')
+
   return (
     <div className="flex flex-col min-h-dvh bg-bg">
-      <Header title="Supplying" showBack showNotification badgeCount={unreadCount} />
+      <Header title={t('supplying.pageTitle')} showBack showNotification badgeCount={unreadCount} />
 
       {/* Segmented Control */}
       <div className="px-4 pt-2 pb-3">
         <div className="flex bg-bg-alt rounded-[12px] p-1">
-          {(['requests', 'history'] as Tab[]).map((t) => (
+          {(['requests', 'history'] as Tab[]).map((tt) => (
             <button
-              key={t}
-              onClick={() => setTab(t)}
+              key={tt}
+              onClick={() => setTab(tt)}
               className={cn(
-                'flex-1 py-2 text-sm font-medium rounded-[10px] transition-colors capitalize',
-                tab === t ? 'bg-white text-dark shadow-sm' : 'text-gray'
+                'flex-1 py-2 text-sm font-medium rounded-[10px] transition-colors',
+                tab === tt ? 'bg-white text-dark shadow-sm' : 'text-gray'
               )}
             >
-              {t}
+              {tt === 'requests' ? t('supplying.requestsTab') : t('supplying.historyTab')}
             </button>
           ))}
         </div>
       </div>
 
       <div className="px-4 pb-3 flex items-center justify-between">
-        <span className="text-xs text-gray">{displayedRequests.length} {tab === 'requests' ? 'pending' : 'completed'}</span>
+        <span className="text-xs text-gray">
+          {tab === 'requests'
+            ? t('supplying.pendingCount', { count: displayedRequests.length })
+            : t('supplying.completedCount', { count: displayedRequests.length })}
+        </span>
         {tab === 'requests' && (
           <button onClick={() => setShowCreate(true)} className="flex items-center gap-1 text-sm font-medium text-primary">
-            <Plus className="h-4 w-4" /> New Request
+            <Plus className="h-4 w-4" /> {t('supplying.newRequestBtn')}
           </button>
         )}
       </div>
@@ -146,12 +158,12 @@ export function SupplyingPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-semibold text-dark">{req.supplier_name}</p>
-                  <p className="text-xs text-gray mt-0.5">{new Date(req.created_at).toLocaleDateString()}</p>
+                  <p className="text-xs text-gray mt-0.5">{new Date(req.created_at).toLocaleDateString(locale)}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <p className="text-sm font-semibold text-dark">{req.total_sum.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}</p>
                   <span className={cn('flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium', color)}>
-                    <Icon className="h-3 w-3" /> {req.status}
+                    <Icon className="h-3 w-3" /> {statusLabel(req.status)}
                   </span>
                 </div>
               </div>
@@ -163,14 +175,14 @@ export function SupplyingPage() {
                     onClick={() => rejectMutation.mutate(req.id)}
                     disabled={rejectMutation.isPending}
                   >
-                    <XCircle className="h-4 w-4 mr-1" /> Reject
+                    <XCircle className="h-4 w-4 mr-1" /> {t('supplying.rejectBtn')}
                   </Button>
                   <Button
                     fullWidth
                     onClick={() => approveMutation.mutate(req.id)}
                     disabled={approveMutation.isPending}
                   >
-                    <CheckCircle className="h-4 w-4 mr-1" /> Approve
+                    <CheckCircle className="h-4 w-4 mr-1" /> {t('supplying.approveBtn')}
                   </Button>
                 </div>
               )}
@@ -182,7 +194,7 @@ export function SupplyingPage() {
           <div className="text-center py-12">
             <Truck className="h-12 w-12 text-gray-light mx-auto mb-3" />
             <p className="text-sm text-gray">
-              {tab === 'requests' ? 'No pending requests' : 'No history yet'}
+              {tab === 'requests' ? t('supplying.noPending') : t('supplying.noHistory')}
             </p>
           </div>
         )}
@@ -192,26 +204,26 @@ export function SupplyingPage() {
 
       <Tabbar />
 
-      <BottomSheet isOpen={showCreate} onClose={() => setShowCreate(false)} title="New Supply Request">
+      <BottomSheet isOpen={showCreate} onClose={() => setShowCreate(false)} title={t('supplying.newSupplyTitle')}>
         <div className="space-y-4">
-          <Input label="Supplier" placeholder="Supplier name" value={supplierName} onChange={(e) => setSupplierName(e.target.value)} />
+          <Input label={t('supplying.supplierLabel')} placeholder={t('supplying.supplierNamePh')} value={supplierName} onChange={(e) => setSupplierName(e.target.value)} />
 
           {items.map((item, idx) => (
             <div key={idx} className="bg-bg rounded-[12px] p-3 space-y-2">
-              <p className="text-xs font-medium text-gray">Item {idx + 1}</p>
-              <Input placeholder="Product name" value={item.product_name} onChange={(e) => updateItem(idx, 'product_name', e.target.value)} />
+              <p className="text-xs font-medium text-gray">{t('transfers.itemNum', { num: idx + 1 })}</p>
+              <Input placeholder={t('transfers.productNamePh')} value={item.product_name} onChange={(e) => updateItem(idx, 'product_name', e.target.value)} />
               <div className="grid grid-cols-3 gap-2">
-                <Input placeholder="Qty" type="number" value={item.quantity} onChange={(e) => updateItem(idx, 'quantity', e.target.value)} />
-                <Input placeholder="Unit" value={item.unit} onChange={(e) => updateItem(idx, 'unit', e.target.value)} />
-                <Input placeholder="Price" type="number" value={item.price_per_unit} onChange={(e) => updateItem(idx, 'price_per_unit', e.target.value)} />
+                <Input placeholder={t('transfers.qtyPh')} type="number" value={item.quantity} onChange={(e) => updateItem(idx, 'quantity', e.target.value)} />
+                <Input placeholder={t('transfers.unitPh')} value={item.unit} onChange={(e) => updateItem(idx, 'unit', e.target.value)} />
+                <Input placeholder={t('supplying.pricePh')} type="number" value={item.price_per_unit} onChange={(e) => updateItem(idx, 'price_per_unit', e.target.value)} />
               </div>
             </div>
           ))}
 
-          <button onClick={addItem} className="w-full text-sm text-primary font-medium py-2">+ Add item</button>
+          <button onClick={addItem} className="w-full text-sm text-primary font-medium py-2">{t('transfers.addItem')}</button>
 
           <Button fullWidth onClick={handleCreate} disabled={createMutation.isPending}>
-            {createMutation.isPending ? 'Creating...' : 'Create Request'}
+            {createMutation.isPending ? t('common.creating') : t('supplying.createReqBtn')}
           </Button>
         </div>
       </BottomSheet>

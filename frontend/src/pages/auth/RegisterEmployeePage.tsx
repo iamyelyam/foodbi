@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ProgressBar } from '@/components/ui/progress-bar'
 import api from '@/lib/api'
+import { useT } from '@/i18n'
 
 const schema = z.object({
   first_name: z.string().min(1, 'Required'),
@@ -20,6 +21,7 @@ type Form = z.infer<typeof schema>
 
 export function RegisterEmployeePage() {
   const navigate = useNavigate()
+  const t = useT()
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -39,7 +41,7 @@ export function RegisterEmployeePage() {
       })
       navigate('/onboarding')
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Registration failed')
+      setError(err.response?.data?.error || t('auth.registrationFailed'))
     } finally {
       setLoading(false)
     }
@@ -52,28 +54,28 @@ export function RegisterEmployeePage() {
       </div>
 
       <div className="px-4 pt-8 pb-6">
-        <h1 className="text-2xl font-bold text-dark">Sign up as Employee</h1>
-        <p className="mt-2 text-sm text-gray">Enter your invite code and create your account</p>
+        <h1 className="text-2xl font-bold text-dark">{t('auth.signUpAsEmployee')}</h1>
+        <p className="mt-2 text-sm text-gray">{t('auth.enterInviteCode')}</p>
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-1 px-4 gap-4">
-        <Input label="Invite code" placeholder="Paste code from your manager" error={errors.invite_code?.message} {...register('invite_code')} />
+        <Input label={t('auth.inviteCode')} placeholder={t('auth.inviteCodePh')} error={errors.invite_code?.message} {...register('invite_code')} />
         <div className="grid grid-cols-2 gap-3">
-          <Input label="First name" placeholder="John" error={errors.first_name?.message} {...register('first_name')} />
-          <Input label="Last name" placeholder="Doe" error={errors.last_name?.message} {...register('last_name')} />
+          <Input label={t('common.firstName')} placeholder={t('auth.johnPh')} error={errors.first_name?.message} {...register('first_name')} />
+          <Input label={t('common.lastName')} placeholder={t('auth.doePh')} error={errors.last_name?.message} {...register('last_name')} />
         </div>
-        <Input label="Email" type="email" placeholder="your@email.com" error={errors.email?.message} {...register('email')} />
-        <Input label="Password" type="password" placeholder="Minimum 8 characters" error={errors.password?.message} {...register('password')} />
+        <Input label={t('common.email')} type="email" placeholder={t('auth.emailPlaceholder')} error={errors.email?.message} {...register('email')} />
+        <Input label={t('common.password')} type="password" placeholder={t('auth.min8Placeholder')} error={errors.password?.message} {...register('password')} />
 
         {error && <p className="text-sm text-danger text-center">{error}</p>}
 
         <div className="mt-auto pb-8">
           <Button type="submit" fullWidth disabled={loading}>
-            {loading ? 'Creating account...' : 'Create account'}
+            {loading ? t('auth.creatingAccount') : t('auth.createAccount')}
           </Button>
           <button type="button" onClick={() => navigate('/login')}
             className="mt-4 w-full text-center text-sm text-primary font-medium">
-            Already have an account? Sign in
+            {t('auth.alreadyHaveAccount')}
           </button>
         </div>
       </form>

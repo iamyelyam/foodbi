@@ -5,13 +5,14 @@ import { Tabbar } from '@/components/layout/Tabbar'
 import { LocationSwitcher } from '@/components/layout/LocationSwitcher'
 import { BottomSheet } from '@/components/layout/BottomSheet'
 import { SegmentedControl } from '@/components/ui/segmented-control'
-import { DateRangePicker } from '@/components/ui/date-range-picker'
+import { DateRangeSheet } from '@/components/layout/DateRangeSheet'
+import { todayIso } from '@/lib/dateRange'
 import { CardSkeleton } from '@/components/ui/skeleton'
 import { useDashboard, useUnreadNotificationCount } from '@/hooks/useApi'
 import { useAppStore, useCurrency } from '@/stores/app'
-import { MapPin, ChevronDown, Bell, Calendar, ChevronRight, Info, AlertCircle } from 'lucide-react'
+import { MapPin, ChevronDown, Calendar, ChevronRight, Info, AlertCircle } from 'lucide-react'
 import api from '@/lib/api'
-import { useT } from '@/i18n'
+import { useT, useI18nStore } from '@/i18n'
 
 type View = 'revenue' | 'purchase' | 'stocks'
 
@@ -23,7 +24,8 @@ export function DashboardPage() {
   const [showDatePicker, setShowDatePicker] = useState(false)
   const [dateFrom, setDateFrom] = useState<string | undefined>()
   const [dateTo, setDateTo] = useState<string | undefined>()
-  const activeLocationId = useAppStore((s) => s.activeLocationId)
+  const selectedLocationIds = useAppStore((s) => s.selectedLocationIds)
+  const showUploadInvoicesBanner = useAppStore((s) => s.uiPrefs.showUploadInvoicesBanner)
   const cs = useCurrency()
 
   const { data: locations = [] } = useQuery({
@@ -31,14 +33,42 @@ export function DashboardPage() {
     queryFn: () => api.get('/locations').then((r) => r.data),
   })
 
-  const activeLoc = locations.find((l: any) => l.id === activeLocationId)
-  const locationName = activeLoc?.name || 'El Barco De Colon'
+  // Stock value — fetched only when Stocks view is selected
+  const { data: stockItems = [] } = useQuery<any[]>({
+    queryKey: ['stock-summary'],
+    queryFn: () => api.get('/stock').then((r) => r.data),
+    enabled: true, // always loaded so switching is instant
+  })
+  const stockValue = (stockItems as any[])
+    .filter((i: any) => (i.amount || 0) > 0)
+    .reduce((s: number, i: any) => s + (i.cost_sum || 0), 0)
+
+  // Smart location label based on multi-select state:
+  //  - 1 location in company → its name (no selector value matters)
+  //  - 0 selected (or all selected) → "All locations"
+  //  - 1 selected → its name
+  //  - >1 (subset) → "N locations"
+  let locationName = t('common.loading')
+  if (locations.length === 0) {
+    locationName = t('location.noLocation')
+  } else if (locations.length === 1) {
+    locationName = locations[0].name
+  } else if (selectedLocationIds.length === 0 || selectedLocationIds.length === locations.length) {
+    locationName = t('location.allLocations')
+  } else if (selectedLocationIds.length === 1) {
+    const sel = locations.find((l: any) => l.id === selectedLocationIds[0])
+    locationName = sel?.name || t('common.loading')
+  } else {
+    locationName = t('location.multipleLocations', { count: selectedLocationIds.length })
+  }
 
   const { data: unreadCount = 0 } = useUnreadNotificationCount()
   const { data: summary, isLoading } = useDashboard(dateFrom, dateTo)
 
   const today = new Date()
-  const locale = useAppStore((s) => s.companySettings.locale)
+  // UI date formatting follows the user's chosen UI language, not the company's
+  // currency locale (which is fixed to ru-KZ for this restaurant).
+  const locale = useI18nStore((s) => s.locale)
   const dateStr = today.toLocaleDateString(locale, { month: 'long', day: 'numeric' })
 
   return (
@@ -50,14 +80,12 @@ export function DashboardPage() {
           <span className="text-base text-dark">{locationName}</span>
           <ChevronDown className="h-4 w-4 text-gray" />
         </button>
-        <button onClick={() => navigate('/notifications')} className="relative p-1">
-          <Bell className="h-6 w-6 text-dark" strokeWidth={1.5} />
-          {unreadCount > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 rounded-full bg-danger text-white text-[10px] font-bold flex items-center justify-center px-1">
-              {unreadCount}
-            </span>
-          )}
-        </button>
+        {/* Notifications hidden globally — see NOTIFICATIONS_ENABLED in components/layout/Header.tsx.
+            Re-enable by uncommenting and importing { Bell } again. */}
+        <span aria-hidden />
+        {false && unreadCount > 0 && (
+          <button onClick={() => navigate('/notifications')} className="relative p-1" />
+        )}
       </header>
 
       <main className="flex-1 px-4 pb-[100px] space-y-4">
@@ -95,47 +123,82 @@ export function DashboardPage() {
                 <Info className="h-6 w-6 text-bg-alt stroke-[#dddee1]" strokeWidth={1.5} />
               </div>
 
-              {/* Revenue */}
-              <div className="mb-3">
-                <p className="text-xs font-semibold text-dark-alt">{t('dashboard.totalRevenue')}</p>
-                <p className="text-4xl font-extrabold text-black mt-0.5">
-                  {(summary?.today_revenue ?? 0).toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}
-                </p>
-              </div>
+              {/* Big metric — depends on selected view (revenue / purchases / stocks) */}
+              {(() => {
+                const fmt = (v: number) => v.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })
+                const revenue = summary?.today_revenue ?? 0
+                const purchases = summary?.today_purchases ?? 0
+                const profit = summary?.today_profit ?? 0
+                let title = t('dashboard.totalRevenue')
+                let bigValue = revenue
+                if (view === 'purchase') {
+                  title = t('dashboard.purchases')
+                  bigValue = purchases
+                } else if (view === 'stocks') {
+                  title = t('dashboard.stockManagement')
+                  bigValue = stockValue
+                }
+                return (
+                  <>
+                    <div className="mb-3">
+                      <p className="text-xs font-semibold text-dark-alt">{title}</p>
+                      <p className="text-4xl font-extrabold text-black mt-0.5">
+                        {fmt(bigValue)}{cs}
+                      </p>
+                    </div>
 
-              {/* Day loss + All time gain */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-[#606060]">{t('dashboard.currentDayLoss')}</span>
-                  <span className="text-xs text-danger">
-                    {(summary?.today_purchases ?? 0) > 0 ? '-' : ''}{(summary?.today_purchases ?? 0).toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-[#606060]">{t('dashboard.allTimeGain')}</span>
-                  <span className={`text-xs ${(summary?.week_profit ?? 0) >= 0 ? 'text-success-alt' : 'text-danger'}`}>
-                    {(summary?.week_profit ?? 0) >= 0 ? '+' : ''}{(summary?.week_profit ?? 0).toLocaleString('ru-KZ', { maximumFractionDigits: 0 })}{cs}
-                  </span>
-                </div>
-              </div>
+                    <div className="space-y-1.5">
+                      {/* Sub-row 1: opposing metric */}
+                      {view === 'revenue' && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-[#606060]">{t('dashboard.currentDayLoss')}</span>
+                          <span className="text-xs text-danger">
+                            {purchases > 0 ? '-' : ''}{fmt(purchases)}{cs}
+                          </span>
+                        </div>
+                      )}
+                      {view === 'purchase' && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-[#606060]">{t('dashboard.totalRevenue')}</span>
+                          <span className="text-xs text-success-alt">
+                            +{fmt(revenue)}{cs}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Sub-row 2: profit (always shown for revenue/purchase) */}
+                      {view !== 'stocks' && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-[#606060]">{t('dashboard.allTimeGain')}</span>
+                          <span className={`text-xs ${profit >= 0 ? 'text-success-alt' : 'text-danger'}`}>
+                            {profit >= 0 ? '+' : ''}{fmt(profit)}{cs}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )
+              })()}
             </div>
 
-            {/* Upload invoices banner */}
-            <button
-              onClick={() => navigate('/file-upload')}
-              className="w-full flex items-center gap-3 bg-white border border-bg-alt rounded-[16px] px-4 py-3"
-            >
-              <div className="w-10 h-10 rounded-full bg-warning/10 flex items-center justify-center shrink-0">
-                <AlertCircle className="h-5 w-5 text-warning" />
-              </div>
-              <div className="flex-1 text-left">
-                <p className="text-[15px] font-medium text-dark">{t('dashboard.uploadInvoices')}</p>
-                <p className="text-[15px] text-[#797979]">{t('dashboard.uploadInvoicesDesc')}</p>
-              </div>
-              <div className="bg-primary rounded-[10px] px-4 py-1.5">
-                <span className="text-base font-medium text-black">{t('common.upload')}</span>
-              </div>
-            </button>
+            {/* Upload invoices banner — toggleable from Profile → Settings */}
+            {showUploadInvoicesBanner && (
+              <button
+                onClick={() => navigate('/file-upload')}
+                className="w-full flex items-center gap-3 bg-white border border-bg-alt rounded-[16px] px-4 py-3"
+              >
+                <div className="w-10 h-10 rounded-full bg-warning/10 flex items-center justify-center shrink-0">
+                  <AlertCircle className="h-5 w-5 text-warning" />
+                </div>
+                <div className="flex-1 text-left">
+                  <p className="text-[15px] font-medium text-dark">{t('dashboard.uploadInvoices')}</p>
+                  <p className="text-[15px] text-[#797979]">{t('dashboard.uploadInvoicesDesc')}</p>
+                </div>
+                <div className="bg-primary rounded-[10px] px-4 py-1.5">
+                  <span className="text-base font-medium text-black">{t('common.upload')}</span>
+                </div>
+              </button>
+            )}
 
             {/* Activities */}
             <div>
@@ -216,18 +279,13 @@ export function DashboardPage() {
       <Tabbar />
       <LocationSwitcher isOpen={showLocations} onClose={() => setShowLocations(false)} />
 
-      <BottomSheet isOpen={showDatePicker} onClose={() => setShowDatePicker(false)} title="Date Picker">
-        <DateRangePicker
-          startDate={dateFrom}
-          endDate={dateTo}
-          onConfirm={(start, end) => {
-            setDateFrom(start)
-            setDateTo(end)
-            setShowDatePicker(false)
-          }}
-          onBack={() => setShowDatePicker(false)}
-        />
-      </BottomSheet>
+      <DateRangeSheet
+        isOpen={showDatePicker}
+        onClose={() => setShowDatePicker(false)}
+        from={dateFrom ?? todayIso()}
+        to={dateTo ?? todayIso()}
+        onChange={(f, t) => { setDateFrom(f); setDateTo(t) }}
+      />
     </div>
   )
 }

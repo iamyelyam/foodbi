@@ -11,6 +11,7 @@ import { Snackbar } from '@/components/ui/snackbar'
 import { MapPin, Plus, RefreshCw, Check } from 'lucide-react'
 import { useAppStore } from '@/stores/app'
 import api from '@/lib/api'
+import { useT, useI18nStore } from '@/i18n'
 
 interface Location {
   id: string
@@ -29,6 +30,8 @@ interface SyncStatus {
 }
 
 export function LocationsPage() {
+  const t = useT()
+  const locale = useI18nStore((s) => s.locale)
   const queryClient = useQueryClient()
   const { data: unreadCount = 0 } = useUnreadNotificationCount()
   const { activeLocationId, setActiveLocation } = useAppStore()
@@ -77,18 +80,20 @@ export function LocationsPage() {
 
   return (
     <div className="flex flex-col min-h-dvh bg-bg">
-      <Header title="Locations" showBack showNotification badgeCount={unreadCount} />
+      <Header title={t('locations.title')} showBack showNotification badgeCount={unreadCount} />
 
       <main className="flex-1 px-4 pt-4 pb-20">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-base font-semibold text-dark">
-            {locations.length} location{locations.length !== 1 ? 's' : ''}
+            {locations.length === 1
+              ? t('locations.countSingular', { count: locations.length })
+              : t('locations.countLabel', { count: locations.length })}
           </h2>
           <button
             onClick={() => setShowAdd(true)}
             className="flex items-center gap-1.5 text-sm font-medium text-primary"
           >
-            <Plus className="h-4 w-4" /> Add
+            <Plus className="h-4 w-4" /> {t('common.add')}
           </button>
         </div>
 
@@ -132,17 +137,17 @@ export function LocationsPage() {
                   {lastSync ? (
                     <div className="flex items-center gap-1.5 text-xs text-gray">
                       <RefreshCw className="h-3 w-3" />
-                      <span>Last sync: {new Date(lastSync.started_at).toLocaleTimeString()}</span>
+                      <span>{t('locations.lastSync', { time: new Date(lastSync.started_at).toLocaleTimeString(locale) })}</span>
                     </div>
                   ) : (
-                    <span className="text-xs text-gray">Not synced yet</span>
+                    <span className="text-xs text-gray">{t('locations.notSyncedYet')}</span>
                   )}
                   <button
                     onClick={(e) => { e.stopPropagation(); syncMutation.mutate(loc.id) }}
                     disabled={syncMutation.isPending}
                     className="text-xs font-medium text-primary bg-primary-lighter px-3 py-1 rounded-full"
                   >
-                    {syncMutation.isPending ? 'Syncing...' : 'Sync Now'}
+                    {syncMutation.isPending ? t('locations.syncing') : t('locations.syncNow')}
                   </button>
                 </div>
               </button>
@@ -152,9 +157,9 @@ export function LocationsPage() {
           {locations.length === 0 && (
             <div className="text-center py-12">
               <MapPin className="h-12 w-12 text-gray-light mx-auto mb-3" />
-              <p className="text-sm text-gray">No locations yet</p>
+              <p className="text-sm text-gray">{t('locations.noLocationsYet')}</p>
               <Button variant="primary" size="sm" className="mt-4" onClick={() => setShowAdd(true)}>
-                Add your first location
+                {t('locations.addFirstLocation')}
               </Button>
             </div>
           )}
@@ -164,23 +169,23 @@ export function LocationsPage() {
 
       <Tabbar />
 
-      <BottomSheet isOpen={showAdd} onClose={() => setShowAdd(false)} title="Add Location">
+      <BottomSheet isOpen={showAdd} onClose={() => setShowAdd(false)} title={t('locations.addLocation')}>
         <div className="flex flex-col gap-4">
           <Input
-            label="Restaurant name"
-            placeholder="e.g. Main Street Branch"
+            label={t('locations.restaurantName')}
+            placeholder={t('locations.streetExample')}
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
           <Input
-            label="Address"
-            placeholder="123 Main St"
+            label={t('locations.addressLabel')}
+            placeholder={t('locations.streetAddressExample')}
             value={address}
             onChange={(e) => setAddress(e.target.value)}
           />
           <Input
-            label="iiko Organization ID"
-            placeholder="From iiko Cloud settings"
+            label={t('locations.iikoOrgId')}
+            placeholder={t('locations.iikoOrgIdPh')}
             value={iikoOrgId}
             onChange={(e) => setIikoOrgId(e.target.value)}
           />
@@ -189,7 +194,7 @@ export function LocationsPage() {
             onClick={() => addMutation.mutate({ name, address, iiko_org_id: iikoOrgId })}
             disabled={!name || addMutation.isPending}
           >
-            {addMutation.isPending ? 'Adding...' : 'Add Location'}
+            {addMutation.isPending ? t('common.adding') : t('locations.addLocation')}
           </Button>
         </div>
       </BottomSheet>
@@ -197,7 +202,7 @@ export function LocationsPage() {
       <Snackbar
         isOpen={showSyncSuccess}
         onClose={() => setShowSyncSuccess(false)}
-        message="Sync queued successfully"
+        message={t('locations.syncQueued')}
         type="success"
       />
     </div>
