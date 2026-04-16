@@ -5,6 +5,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
 import api from '@/lib/api'
+import { useSwipeBack } from '@/hooks/useSwipeBack'
 import { LoginPage } from '@/pages/auth/LoginPage'
 import { RegisterPage } from '@/pages/auth/RegisterPage'
 import { RegisterEmployeePage } from '@/pages/auth/RegisterEmployeePage'
@@ -64,6 +65,11 @@ function RoleHome() {
   return <DashboardPage />
 }
 
+function SwipeBackHandler() {
+  useSwipeBack()
+  return null
+}
+
 function AppSettingsLoader() {
   const { isAuthenticated } = useAuthStore()
   const setCompanySettings = useAppStore((s) => s.setCompanySettings)
@@ -87,6 +93,7 @@ export default function App() {
       <ErrorBoundary>
         <AppSettingsLoader />
         <BrowserRouter>
+          <SwipeBackHandler />
           <Routes>
             {/* Public */}
             <Route path="/login" element={<LoginPage />} />

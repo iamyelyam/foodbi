@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Tabbar } from '@/components/layout/Tabbar'
 import { LocationSwitcher } from '@/components/layout/LocationSwitcher'
 import { SegmentedControl } from '@/components/ui/segmented-control'
@@ -9,9 +9,10 @@ import { todayIso } from '@/lib/dateRange'
 import { CardSkeleton } from '@/components/ui/skeleton'
 import { useDashboard, useUnreadNotificationCount } from '@/hooks/useApi'
 import { useAppStore, useCurrency } from '@/stores/app'
-import { MapPin, ChevronDown, Calendar, ChevronRight, Info, AlertCircle } from 'lucide-react'
+import { MapPin, ChevronDown, Calendar, ChevronRight, Info, AlertCircle, Loader2 } from 'lucide-react'
 import api from '@/lib/api'
 import { useT, useI18nStore } from '@/i18n'
+import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 
 type View = 'revenue' | 'purchase' | 'stocks'
 
@@ -72,6 +73,13 @@ export function DashboardPage() {
   const { data: unreadCount = 0 } = useUnreadNotificationCount()
   const { data: summary, isLoading } = useDashboard(dateFrom, dateTo)
 
+  const queryClient = useQueryClient()
+  const handleRefresh = useCallback(() =>
+    queryClient.invalidateQueries().then(() => undefined),
+    [queryClient]
+  )
+  const { pulling, pullDistance, refreshing } = usePullToRefresh({ onRefresh: handleRefresh })
+
   const today = new Date()
   // UI date formatting follows the user's chosen UI language, not the company's
   // currency locale (which is fixed to ru-KZ for this restaurant).
@@ -80,6 +88,18 @@ export function DashboardPage() {
 
   return (
     <div className="flex flex-col min-h-dvh bg-white">
+      {/* Pull-to-refresh indicator */}
+      {pulling && (
+        <div
+          className="flex items-center justify-center overflow-hidden transition-[height] duration-200"
+          style={{ height: pullDistance }}
+        >
+          <Loader2
+            className={`h-6 w-6 text-gray ${refreshing ? 'animate-spin' : ''}`}
+            style={{ opacity: Math.min(pullDistance / 60, 1) }}
+          />
+        </div>
+      )}
       {/* Header */}
       <header className="sticky top-0 z-40 flex items-center justify-between px-4 py-4 bg-white">
         <button onClick={() => setShowLocations(true)} className="flex items-center gap-1.5">
