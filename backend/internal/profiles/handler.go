@@ -98,6 +98,7 @@ var currencyPresets = map[string]CompanySettings{
 	"GB": {Country: "GB", Currency: "GBP", CurrencySymbol: "£", Locale: "en-GB"},
 	"TR": {Country: "TR", Currency: "TRY", CurrencySymbol: "₺", Locale: "tr-TR"},
 	"GE": {Country: "GE", Currency: "GEL", CurrencySymbol: "₾", Locale: "ka-GE"},
+	"ES": {Country: "ES", Currency: "EUR", CurrencySymbol: "€", Locale: "es-ES"},
 }
 
 func (h *Handler) UpdateCompanySettings(w http.ResponseWriter, r *http.Request) {

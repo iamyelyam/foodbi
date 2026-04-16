@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { CardSkeleton } from '@/components/ui/skeleton'
 import { Header } from '@/components/layout/Header'
@@ -11,13 +11,17 @@ import { Snackbar } from '@/components/ui/snackbar'
 import { MapPin, Plus, RefreshCw, Check, Pencil, Trash2, MoreVertical } from 'lucide-react'
 import { useAppStore } from '@/stores/app'
 import api from '@/lib/api'
+import { findPosLabel } from '@/lib/posSystems'
 import { useT, useI18nStore } from '@/i18n'
 
 interface Location {
   id: string
   name: string
   address: string
+  pos_system?: string
   iiko_org_id?: string
+  currency_symbol?: string
+  locale?: string
 }
 
 interface SyncStatus {
@@ -49,16 +53,32 @@ export function LocationsPage() {
   const [editIikoLogin, setEditIikoLogin] = useState('')
   const [editIikoPassword, setEditIikoPassword] = useState('')
 
+  // NUMIER edit state
+  const [editNumierApiKey, setEditNumierApiKey] = useState('')
+
   // Delete state
   const [deletingLoc, setDeletingLoc] = useState<Location | null>(null)
 
   // Context menu state
   const [menuLocId, setMenuLocId] = useState<string | null>(null)
 
+  const setLocationCurrencies = useAppStore((s) => s.setLocationCurrencies)
+
   const { data: locations = [], isLoading } = useQuery<Location[]>({
     queryKey: ['locations'],
     queryFn: () => api.get('/locations').then(r => r.data),
   })
+
+  // Sync per-location currencies to global store
+  useEffect(() => {
+    if (locations.length > 0) {
+      const map: Record<string, string> = {}
+      for (const loc of locations) {
+        if (loc.id && loc.currency_symbol) map[loc.id] = loc.currency_symbol
+      }
+      setLocationCurrencies(map)
+    }
+  }, [locations, setLocationCurrencies])
 
   const { data: syncStatus = [] } = useQuery<SyncStatus[]>({
     queryKey: ['sync-status'],
@@ -79,15 +99,21 @@ export function LocationsPage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: async (data: { id: string; name: string; address: string; iikoUrl: string; iikoLogin: string; iikoPassword: string }) => {
+    mutationFn: async (data: { id: string; name: string; address: string; posSystem?: string; iikoUrl: string; iikoLogin: string; iikoPassword: string; numierApiKey?: string }) => {
       await api.put(`/locations/${data.id}`, { name: data.name, address: data.address })
-      // Only update iiko config if all three fields are filled (password required for security)
-      if (data.iikoUrl && data.iikoLogin && data.iikoPassword) {
-        await api.put('/locations/iiko-config', {
-          iiko_server_url: data.iikoUrl,
-          iiko_login: data.iikoLogin,
-          iiko_password: data.iikoPassword,
-        })
+      if (data.posSystem === 'numier') {
+        if (data.numierApiKey) {
+          await api.put('/locations/numier-config', { numier_api_key: data.numierApiKey })
+        }
+      } else {
+        // Only update iiko config if all three fields are filled (password required for security)
+        if (data.iikoUrl && data.iikoLogin && data.iikoPassword) {
+          await api.put('/locations/iiko-config', {
+            iiko_server_url: data.iikoUrl,
+            iiko_login: data.iikoLogin,
+            iiko_password: data.iikoPassword,
+          })
+        }
       }
     },
     onSuccess: () => {
@@ -129,13 +155,18 @@ export function LocationsPage() {
     setEditIikoUrl('')
     setEditIikoLogin('')
     setEditIikoPassword('')
+    setEditNumierApiKey('')
     setEditingLoc(loc)
     setMenuLocId(null)
-    try {
-      const { data } = await api.get('/locations/iiko-config')
-      setEditIikoUrl(data.iiko_server_url || '')
-      setEditIikoLogin(data.iiko_login || '')
-    } catch { /* ignore */ }
+    if (loc.pos_system === 'numier') {
+      // NUMIER config: API key is masked, nothing to prefill
+    } else {
+      try {
+        const { data } = await api.get('/locations/iiko-config')
+        setEditIikoUrl(data.iiko_server_url || '')
+        setEditIikoLogin(data.iiko_login || '')
+      } catch { /* ignore */ }
+    }
   }
 
   const openDelete = (loc: Location) => {
@@ -190,7 +221,14 @@ export function LocationsPage() {
                         <MapPin className={`h-5 w-5 ${isActive ? 'text-white' : 'text-primary'}`} />
                       </div>
                       <div>
-                        <p className="text-sm font-semibold text-dark">{loc.name}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold text-dark">{loc.name}</p>
+                          {loc.pos_system && (
+                            <span className="text-[10px] font-medium text-gray bg-bg px-1.5 py-0.5 rounded">
+                              {findPosLabel(loc.pos_system)}
+                            </span>
+                          )}
+                        </div>
                         {loc.address && (
                           <p className="text-xs text-gray mt-0.5">{loc.address}</p>
                         )}
@@ -315,27 +353,38 @@ export function LocationsPage() {
           />
 
           <div className="border-t border-bg-alt pt-4 mt-1">
-            <p className="text-xs font-semibold text-gray mb-3">iiko Server</p>
+            <p className="text-xs font-semibold text-gray mb-3">{t('locations.posConfig')}</p>
             <div className="flex flex-col gap-3">
-              <Input
-                label="Server URL"
-                placeholder="https://..."
-                value={editIikoUrl}
-                onChange={(e) => setEditIikoUrl(e.target.value)}
-              />
-              <Input
-                label={t('locations.iikoLogin')}
-                placeholder="Login"
-                value={editIikoLogin}
-                onChange={(e) => setEditIikoLogin(e.target.value)}
-              />
-              <Input
-                label={t('locations.iikoPassword')}
-                placeholder={t('locations.iikoPasswordPh')}
-                type="password"
-                value={editIikoPassword}
-                onChange={(e) => setEditIikoPassword(e.target.value)}
-              />
+              {editingLoc?.pos_system === 'numier' ? (
+                <Input
+                  label="API Key"
+                  placeholder={t('locations.credentialsPh')}
+                  value={editNumierApiKey}
+                  onChange={(e) => setEditNumierApiKey(e.target.value)}
+                />
+              ) : (
+                <>
+                  <Input
+                    label="Server URL"
+                    placeholder="https://..."
+                    value={editIikoUrl}
+                    onChange={(e) => setEditIikoUrl(e.target.value)}
+                  />
+                  <Input
+                    label={t('locations.login')}
+                    placeholder="Login"
+                    value={editIikoLogin}
+                    onChange={(e) => setEditIikoLogin(e.target.value)}
+                  />
+                  <Input
+                    label={t('locations.password')}
+                    placeholder={t('locations.credentialsPh')}
+                    type="password"
+                    value={editIikoPassword}
+                    onChange={(e) => setEditIikoPassword(e.target.value)}
+                  />
+                </>
+              )}
             </div>
           </div>
 
@@ -345,9 +394,11 @@ export function LocationsPage() {
               id: editingLoc.id,
               name: editName,
               address: editAddress,
+              posSystem: editingLoc.pos_system,
               iikoUrl: editIikoUrl,
               iikoLogin: editIikoLogin,
               iikoPassword: editIikoPassword,
+              numierApiKey: editNumierApiKey || undefined,
             })}
             disabled={!editName || updateMutation.isPending}
           >

@@ -9,7 +9,7 @@ import api from '@/lib/api'
 import { POS_SYSTEMS, findPosLabel } from '@/lib/posSystems'
 import { useT } from '@/i18n'
 
-type Step = 'info' | 'iiko' | 'syncing'
+type Step = 'info' | 'config' | 'syncing'
 
 export function AddLocationPage() {
   const t = useT()
@@ -25,17 +25,23 @@ export function AddLocationPage() {
   const [posSystem, setPosSystem] = useState<string>('')
   const [showPosSheet, setShowPosSheet] = useState(false)
 
-  // Step 2: iiko credentials
-  const [iikoUrl, setIikoUrl] = useState('https://')
-  const [iikoLogin, setIikoLogin] = useState('')
-  const [iikoPassword, setIikoPassword] = useState('')
+  // Step 2: POS credentials (fields used depend on posSystem)
+  const [field1, setField1] = useState('')
+  const [field2, setField2] = useState('')
+  const [field3, setField3] = useState('')
 
   // Step 3: sync progress
   const [locationId, setLocationId] = useState<string>('')
   const [syncError, setSyncError] = useState('')
 
   const step1Valid = !!posSystem
-  const step2Valid = iikoUrl.length > 10 && iikoLogin.trim().length > 0 && iikoPassword.length > 0
+
+  // Each POS defines which fields are required for validation
+  const configValid = posSystem === 'iiko'
+    ? field1.length > 10 && field2.trim().length > 0 && field3.length > 0
+    : posSystem === 'numier'
+      ? field1.trim().length > 10
+      : false
 
   // Create location
   const createMutation = useMutation({
@@ -45,19 +51,8 @@ export function AddLocationPage() {
       const id = res.data?.id
       setLocationId(id)
       queryClient.invalidateQueries({ queryKey: ['locations'] })
-      // Save iiko config then trigger sync
-      saveIikoThenSync(id)
+      saveConfigThenSync(id)
     },
-  })
-
-  // Save iiko config
-  const iikoMutation = useMutation({
-    mutationFn: () =>
-      api.put('/locations/iiko-config', {
-        iiko_server_url: iikoUrl.trim(),
-        iiko_login: iikoLogin.trim(),
-        iiko_password: iikoPassword,
-      }),
   })
 
   // Trigger sync
@@ -65,13 +60,27 @@ export function AddLocationPage() {
     mutationFn: (locId: string) => api.post(`/locations/${locId}/sync`),
   })
 
-  const saveIikoThenSync = async (locId: string) => {
+  // Save POS config — backend endpoint chosen by posSystem
+  const configMutation = useMutation({
+    mutationFn: () => {
+      if (posSystem === 'numier') {
+        return api.put('/locations/numier-config', { numier_api_key: field1.trim() })
+      }
+      return api.put('/locations/iiko-config', {
+        iiko_server_url: field1.trim(),
+        iiko_login: field2.trim(),
+        iiko_password: field3,
+      })
+    },
+  })
+
+  const saveConfigThenSync = async (locId: string) => {
     setStep('syncing')
     try {
-      await iikoMutation.mutateAsync()
+      await configMutation.mutateAsync()
       await syncMutation.mutateAsync(locId)
     } catch (e: any) {
-      setSyncError(e.response?.data?.error || 'Failed to configure iiko')
+      setSyncError(e.response?.data?.error || t('locations.addFailed'))
     }
   }
 
@@ -105,7 +114,6 @@ export function AddLocationPage() {
     if (step !== 'syncing') return
     const timer = setInterval(() => {
       setDisplayProgress((prev) => {
-        // Smoothly approach real progress, but cap at 95% until truly done
         const target = realProgress >= 100 ? 100 : Math.min(realProgress, 95)
         if (prev >= target) return prev
         return Math.min(prev + 2, target)
@@ -114,13 +122,11 @@ export function AddLocationPage() {
     return () => clearInterval(timer)
   }, [step, realProgress])
 
-  // Only show "Done" screen after all checks are green AND minimum 5s elapsed
   const reallyDone = completedTypes.length + failedTypes.length >= syncTypes.length
   useEffect(() => {
     if (!reallyDone || step !== 'syncing') return
     const elapsed = Date.now() - syncStartTime
     const remaining = Math.max(0, 5000 - elapsed)
-    // Ensure progress bar fills to 100% before showing done
     setDisplayProgress(100)
     const timeout = setTimeout(() => setShowDoneScreen(true), remaining + 500)
     return () => clearTimeout(timeout)
@@ -130,10 +136,13 @@ export function AddLocationPage() {
   const allDone = showDoneScreen
 
   const handleStep1Next = () => {
-    if (posSystem === 'iiko') {
-      setStep('iiko')
+    if (posSystem === 'iiko' || posSystem === 'numier') {
+      // Reset fields when switching POS
+      setField1(posSystem === 'iiko' ? 'https://' : '')
+      setField2('')
+      setField3('')
+      setStep('config')
     } else {
-      // Non-iiko POS: create location and go to locations list
       createMutation.mutate({
         name: name.trim(),
         city: city.trim(),
@@ -143,9 +152,9 @@ export function AddLocationPage() {
     }
   }
 
-  const handleStep2Submit = () => {
+  const handleConfigSubmit = () => {
     createMutation.mutate({
-      name: name.trim() || posSystem,
+      name: name.trim() || findPosLabel(posSystem),
       city: city.trim(),
       address: address.trim(),
       pos_system: posSystem,
@@ -154,7 +163,7 @@ export function AddLocationPage() {
 
   const stepTitles: Record<Step, string> = {
     info: t('locations.addLocation'),
-    iiko: 'iiko Server',
+    config: t('locations.posConfig'),
     syncing: t('locations.syncing'),
   }
 
@@ -162,7 +171,7 @@ export function AddLocationPage() {
     <div className="flex flex-col min-h-dvh bg-white">
       <Header title={stepTitles[step]} showBack />
 
-      {/* Step 1: Basic info */}
+      {/* Step 1: POS selection */}
       {step === 'info' && (
         <>
           <main className="flex-1 px-4 pt-4 space-y-3">
@@ -223,31 +232,21 @@ export function AddLocationPage() {
         </>
       )}
 
-      {/* Step 2: iiko credentials */}
-      {step === 'iiko' && (
+      {/* Step 2: POS credentials — same layout, fields differ by POS */}
+      {step === 'config' && (
         <>
           <main className="flex-1 px-4 pt-4 space-y-3">
             <p className="text-sm text-gray mb-2">
-              Введите данные вашего iiko Server для синхронизации данных
+              {t('locations.posConfigDesc')}
             </p>
-            <FilledInput
-              placeholder="iiko Server URL (https://...)"
-              value={iikoUrl}
-              onChange={setIikoUrl}
-            />
-            <FilledInput
-              placeholder="Login"
-              value={iikoLogin}
-              onChange={setIikoLogin}
-            />
-            <FilledInput
-              placeholder="Password"
-              value={iikoPassword}
-              onChange={setIikoPassword}
-              type="password"
+            <PosConfigFields
+              posSystem={posSystem}
+              field1={field1} setField1={setField1}
+              field2={field2} setField2={setField2}
+              field3={field3} setField3={setField3}
             />
 
-            {(createMutation.isError || iikoMutation.isError) && (
+            {(createMutation.isError || configMutation.isError) && (
               <p className="text-sm text-danger text-center pt-2">
                 {t('locations.addFailed')}
               </p>
@@ -262,11 +261,11 @@ export function AddLocationPage() {
               {t('common.back')}
             </button>
             <button
-              onClick={handleStep2Submit}
-              disabled={!step2Valid || createMutation.isPending}
+              onClick={handleConfigSubmit}
+              disabled={!configValid || createMutation.isPending}
               className={cn(
                 'flex-1 rounded-full py-4 text-base font-semibold transition-colors',
-                step2Valid ? 'bg-primary text-dark active:opacity-80' : 'bg-primary-lighter text-gray cursor-not-allowed'
+                configValid ? 'bg-primary text-dark active:opacity-80' : 'bg-primary-lighter text-gray cursor-not-allowed'
               )}
             >
               {createMutation.isPending ? t('common.adding') : t('common.next')}
@@ -275,22 +274,21 @@ export function AddLocationPage() {
         </>
       )}
 
-      {/* Step 3: Sync progress */}
+      {/* Step 3: Sync progress — fully generic */}
       {step === 'syncing' && (
         <main className="flex-1 px-4 pt-12 flex flex-col items-center">
           {!allDone && !syncError ? (
             <>
               <Loader2 className="h-16 w-16 text-primary animate-spin mb-6" />
-              <h2 className="text-xl font-bold text-dark mb-2">Синхронизация с iiko</h2>
+              <h2 className="text-xl font-bold text-dark mb-2">{t('locations.syncingTitle')}</h2>
               <p className="text-sm text-gray text-center mb-6 max-w-[280px]">
-                Загружаем выручку, закупки, склад и продукты из вашего iiko Server
+                {t('locations.syncingDesc')}
               </p>
               <div className="w-full max-w-[300px]">
                 <ProgressBar value={progressPercent} />
                 <p className="text-xs text-gray text-center mt-2">{progressPercent}%</p>
               </div>
 
-              {/* Per-type status */}
               <div className="w-full max-w-[300px] mt-6 space-y-2">
                 {syncTypes.map((type) => {
                   const done = completedTypes.some((s: any) => s.sync_type === type)
@@ -313,10 +311,10 @@ export function AddLocationPage() {
           ) : syncError ? (
             <>
               <XCircle className="h-16 w-16 text-danger mb-6" />
-              <h2 className="text-xl font-bold text-dark mb-2">Ошибка</h2>
+              <h2 className="text-xl font-bold text-dark mb-2">{t('common.error')}</h2>
               <p className="text-sm text-danger text-center mb-6">{syncError}</p>
               <button
-                onClick={() => { setSyncError(''); setStep('iiko') }}
+                onClick={() => { setSyncError(''); setStep('config') }}
                 className="bg-primary text-dark font-semibold rounded-full px-8 py-3"
               >
                 {t('common.retry')}
@@ -325,11 +323,9 @@ export function AddLocationPage() {
           ) : (
             <>
               <CheckCircle className="h-16 w-16 text-success mb-6" />
-              <h2 className="text-xl font-bold text-dark mb-2">Готово!</h2>
+              <h2 className="text-xl font-bold text-dark mb-2">{t('common.done')}</h2>
               <p className="text-sm text-gray text-center mb-6">
-                {hasFailures
-                  ? 'Часть данных загружена. Некоторые этапы завершились с ошибкой — повторите позже.'
-                  : 'Все данные синхронизированы из iiko. Можно пользоваться!'}
+                {hasFailures ? t('locations.syncPartial') : t('locations.syncComplete')}
               </p>
               <button
                 onClick={() => navigate('/locations')}
@@ -342,6 +338,28 @@ export function AddLocationPage() {
         </main>
       )}
     </div>
+  )
+}
+
+/** Renders credential fields for any POS — same visual style, different inputs. */
+function PosConfigFields({
+  posSystem, field1, setField1, field2, setField2, field3, setField3,
+}: {
+  posSystem: string
+  field1: string; setField1: (v: string) => void
+  field2: string; setField2: (v: string) => void
+  field3: string; setField3: (v: string) => void
+}) {
+  if (posSystem === 'numier') {
+    return <FilledInput placeholder="API Key" value={field1} onChange={setField1} />
+  }
+  // iiko (default)
+  return (
+    <>
+      <FilledInput placeholder="Server URL (https://...)" value={field1} onChange={setField1} />
+      <FilledInput placeholder="Login" value={field2} onChange={setField2} />
+      <FilledInput placeholder="Password" value={field3} onChange={setField3} type="password" />
+    </>
   )
 }
 

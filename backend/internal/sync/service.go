@@ -61,6 +61,7 @@ func (s *Service) GetCompaniesToSync(ctx context.Context) ([]CompanySync, error)
 		 JOIN locations l ON l.company_id = c.id
 		 WHERE c.iiko_server_url IS NOT NULL AND c.iiko_server_url != ''
 		   AND c.iiko_login IS NOT NULL AND c.iiko_login != ''
+		   AND COALESCE(l.pos_system, '') <> 'numier'
 		 ORDER BY c.id, l.id`)
 	if err != nil {
 		return nil, fmt.Errorf("query companies: %w", err)

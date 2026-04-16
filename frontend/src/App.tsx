@@ -73,6 +73,7 @@ function SwipeBackHandler() {
 function AppSettingsLoader() {
   const { isAuthenticated } = useAuthStore()
   const setCompanySettings = useAppStore((s) => s.setCompanySettings)
+  const setLocationCurrencies = useAppStore((s) => s.setLocationCurrencies)
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -81,8 +82,20 @@ function AppSettingsLoader() {
           setCompanySettings(r.data.company_settings)
         }
       }).catch(() => {})
+
+      api.get('/locations').then((r) => {
+        if (Array.isArray(r.data)) {
+          const map: Record<string, string> = {}
+          for (const loc of r.data) {
+            if (loc.id && loc.currency_symbol) {
+              map[loc.id] = loc.currency_symbol
+            }
+          }
+          setLocationCurrencies(map)
+        }
+      }).catch(() => {})
     }
-  }, [isAuthenticated, setCompanySettings])
+  }, [isAuthenticated, setCompanySettings, setLocationCurrencies])
 
   return null
 }

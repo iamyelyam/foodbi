@@ -109,9 +109,32 @@ func (s *Service) DiscoverAndMapLocales(ctx context.Context, client *numier.Clie
 		existing = append(existing, loc)
 	}
 
-	// Build result: match existing locations to NUMIER locales
+	// Resolve locale IDs → TPV IDs via GetZonas.
+	// Each locale has one or more TPVs (POS terminals); we need the TPV ID for sales/products API calls.
+	type localeTpv struct {
+		LocaleID          string
+		TpvID             string
+		EstablishmentName string
+	}
+	var tpvs []localeTpv
+	for _, locale := range locales {
+		zonas, err := client.GetZonas(ctx, locale.ID)
+		if err != nil || len(zonas) == 0 {
+			log.Warn().Err(err).Str("locale", locale.ID).Msg("numiersync: no TPVs found for locale")
+			continue
+		}
+		for _, zona := range zonas {
+			tpvs = append(tpvs, localeTpv{
+				LocaleID:          locale.ID,
+				TpvID:             zona.ID,
+				EstablishmentName: locale.EstablishmentName,
+			})
+		}
+	}
+
+	// Build result: match existing locations to NUMIER TPVs
 	var result []LocationSync
-	usedLocales := make(map[string]bool)
+	usedTpvs := make(map[string]bool)
 
 	// First pass: locations that already have a TPV ID
 	for _, loc := range existing {
@@ -121,54 +144,52 @@ func (s *Service) DiscoverAndMapLocales(ctx context.Context, client *numier.Clie
 				NumierTpvID: *loc.NumierTpvID,
 				Name:        loc.Name,
 			})
-			usedLocales[*loc.NumierTpvID] = true
+			usedTpvs[*loc.NumierTpvID] = true
 		}
 	}
 
-	// Second pass: match remaining locations to NUMIER locales by name or assign sequentially
+	// Second pass: match remaining locations to NUMIER TPVs
 	for _, loc := range existing {
 		if loc.NumierTpvID != nil && *loc.NumierTpvID != "" {
 			continue // already mapped
 		}
-		for _, locale := range locales {
-			if usedLocales[locale.ID] {
+		for _, tpv := range tpvs {
+			if usedTpvs[tpv.TpvID] {
 				continue
 			}
-			// Map this location to the first available locale
 			result = append(result, LocationSync{
 				LocationID:  loc.ID,
-				NumierTpvID: locale.ID,
+				NumierTpvID: tpv.TpvID,
 				Name:        loc.Name,
 			})
-			usedLocales[locale.ID] = true
-			// Persist the mapping
+			usedTpvs[tpv.TpvID] = true
 			s.db.Exec(ctx,
 				`UPDATE locations SET numier_tpv_id = $1 WHERE id = $2`,
-				locale.ID, loc.ID)
+				tpv.TpvID, loc.ID)
 			break
 		}
 	}
 
-	// Create new locations for unmapped NUMIER locales
-	for _, locale := range locales {
-		if usedLocales[locale.ID] {
+	// Create new locations for unmapped TPVs
+	for _, tpv := range tpvs {
+		if usedTpvs[tpv.TpvID] {
 			continue
 		}
 		newID := uuid.New()
 		_, err := s.db.Exec(ctx,
 			`INSERT INTO locations (id, company_id, name, address, pos_system, numier_tpv_id, created_at, updated_at)
 			 VALUES ($1, $2, $3, '', 'numier', $4, NOW(), NOW())`,
-			newID, companyID, locale.EstablishmentName, locale.ID)
+			newID, companyID, tpv.EstablishmentName, tpv.TpvID)
 		if err != nil {
-			log.Error().Err(err).Str("locale", locale.EstablishmentName).Msg("numiersync: failed to create location")
+			log.Error().Err(err).Str("tpv", tpv.EstablishmentName).Msg("numiersync: failed to create location")
 			continue
 		}
 		result = append(result, LocationSync{
 			LocationID:  newID,
-			NumierTpvID: locale.ID,
-			Name:        locale.EstablishmentName,
+			NumierTpvID: tpv.TpvID,
+			Name:        tpv.EstablishmentName,
 		})
-		log.Info().Str("locale", locale.EstablishmentName).Str("tpv_id", locale.ID).Msg("numiersync: created new location")
+		log.Info().Str("name", tpv.EstablishmentName).Str("tpv_id", tpv.TpvID).Msg("numiersync: created new location")
 	}
 
 	return result, nil

@@ -11,6 +11,7 @@ backend/api
 backend/sync
 backend/foodbi-api
 backend/foodbi-sync
+backend/foodbi
 .planning/tmp/
 *.exe
 *.DS_Store

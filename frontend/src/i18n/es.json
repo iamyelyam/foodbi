@@ -13,6 +13,7 @@
     "apply": "Aplicar",
     "clear": "Limpiar",
     "retry": "Reintentar",
+    "error": "Error",
     "loading": "Cargando...",
     "noData": "Sin datos",
     "viewAll": "Ver todo",
@@ -240,7 +241,16 @@
     "deleting": "Eliminando...",
     "iikoLogin": "Usuario",
     "iikoPassword": "Contraseña",
-    "iikoPasswordPh": "Dejar vacío para mantener actual"
+    "iikoPasswordPh": "Dejar vacío para mantener actual",
+    "posConfig": "Configuración del TPV",
+    "posConfigDesc": "Introduce las credenciales de tu sistema TPV para sincronizar datos",
+    "login": "Usuario",
+    "password": "Contraseña",
+    "credentialsPh": "Dejar vacío para mantener actual",
+    "syncingTitle": "Sincronizando datos",
+    "syncingDesc": "Cargando ingresos, compras, inventario y productos desde tu TPV",
+    "syncPartial": "Parte de los datos se cargaron. Algunas etapas fallaron — inténtalo más tarde.",
+    "syncComplete": "¡Todos los datos sincronizados! Ya puedes empezar."
   },
   "notifications": {
     "title": "Notificaciones",

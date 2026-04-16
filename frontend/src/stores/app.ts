@@ -53,6 +53,9 @@ interface AppState {
   setActiveLocation: (id: string | null) => void
   companySettings: CompanySettings
   setCompanySettings: (settings: CompanySettings) => void
+  // Per-location currency: locationId → currency_symbol
+  locationCurrencies: Record<string, string>
+  setLocationCurrencies: (map: Record<string, string>) => void
   uiPrefs: UiPrefs
   setUiPref: <K extends keyof UiPrefs>(key: K, value: UiPrefs[K]) => void
 }
@@ -95,6 +98,8 @@ export const useAppStore = create<AppState>((set) => ({
     locale: 'ru-KZ',
   },
   setCompanySettings: (settings) => set({ companySettings: settings }),
+  locationCurrencies: {},
+  setLocationCurrencies: (map) => set({ locationCurrencies: map }),
   uiPrefs: readUiPrefs(),
   setUiPref: (key, value) =>
     set((s) => {
@@ -104,7 +109,12 @@ export const useAppStore = create<AppState>((set) => ({
     }),
 }))
 
-/** Helper hook — returns just the currency symbol for formatting */
+/** Helper hook — returns currency symbol for the active location, falling back to company default */
 export function useCurrency() {
-  return useAppStore((s) => s.companySettings.currency_symbol)
+  return useAppStore((s) => {
+    if (s.activeLocationId && s.locationCurrencies[s.activeLocationId]) {
+      return s.locationCurrencies[s.activeLocationId]
+    }
+    return s.companySettings.currency_symbol
+  })
 }

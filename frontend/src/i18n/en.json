@@ -13,6 +13,7 @@
     "apply": "Apply",
     "clear": "Clear",
     "retry": "Retry",
+    "error": "Error",
     "loading": "Loading...",
     "noData": "No data",
     "viewAll": "View all",
@@ -240,7 +241,16 @@
     "deleting": "Deleting...",
     "iikoLogin": "Login",
     "iikoPassword": "Password",
-    "iikoPasswordPh": "Leave empty to keep current"
+    "iikoPasswordPh": "Leave empty to keep current",
+    "posConfig": "POS Configuration",
+    "posConfigDesc": "Enter the credentials for your POS system to sync data",
+    "login": "Login",
+    "password": "Password",
+    "credentialsPh": "Leave empty to keep current",
+    "syncingTitle": "Syncing data",
+    "syncingDesc": "Loading revenue, purchases, stock, and products from your POS system",
+    "syncPartial": "Some data was loaded. Some stages failed — please retry later.",
+    "syncComplete": "All data synced successfully. You're all set!"
   },
   "notifications": {
     "title": "Notifications",

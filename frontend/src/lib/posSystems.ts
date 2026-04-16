@@ -13,6 +13,7 @@ export interface PosSystemOption {
 
 export const POS_SYSTEMS: PosSystemOption[] = [
   { id: 'iiko', label: 'iiko', enabled: true },
+  { id: 'numier', label: 'NUMIER', enabled: true },
   { id: 'r_keeper', label: 'r_keeper', enabled: false },
   { id: 'poster', label: 'Poster', enabled: false },
   { id: 'manual', label: 'Manual', enabled: true },
