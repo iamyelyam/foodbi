@@ -13,12 +13,9 @@ export function Tabbar() {
   ]
 
   return (
-    <nav
-      className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full sm:max-w-[375px] bg-white z-50"
-      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
-    >
+    <nav className="fixed inset-x-0 bottom-0 z-50 bg-white pb-[env(safe-area-inset-bottom)]">
       <div className="h-[2px] bg-bg-alt" />
-      <div className="flex items-center justify-around h-[82px] px-4 pb-[20px]">
+      <div className="flex items-center justify-around h-[62px] px-4">
         {tabs.map(({ to, icon, label }) => (
           <NavLink
             key={to}
