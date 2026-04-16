@@ -90,7 +90,27 @@ func (s *Service) GetCompaniesToSync(ctx context.Context) ([]CompanySync, error)
 
 	result := make([]CompanySync, 0, len(order))
 	for _, cid := range order {
-		result = append(result, *companyMap[cid])
+		cs := companyMap[cid]
+		// Prevent duplicate data: if this company has any multi-department locations
+		// (with iiko_org_id set), skip the legacy locations (without iiko_org_id).
+		// Otherwise one iiko server's orders would be written to both places.
+		hasMultiDept := false
+		for _, loc := range cs.Locations {
+			if loc.IikoOrgID != "" {
+				hasMultiDept = true
+				break
+			}
+		}
+		if hasMultiDept {
+			filtered := make([]LocationSync, 0, len(cs.Locations))
+			for _, loc := range cs.Locations {
+				if loc.IikoOrgID != "" {
+					filtered = append(filtered, loc)
+				}
+			}
+			cs.Locations = filtered
+		}
+		result = append(result, *cs)
 	}
 	return result, nil
 }

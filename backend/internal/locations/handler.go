@@ -173,7 +173,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	companyID := middleware.GetCompanyID(r.Context())
 
 	rows, err := h.db.Query(r.Context(),
-		`SELECT id, company_id, name, address, iiko_org_id, pos_system, created_at FROM locations WHERE company_id = $1 ORDER BY name`,
+		`SELECT id, company_id, name, address, iiko_org_id, pos_system, currency_symbol, locale, created_at FROM locations WHERE company_id = $1 ORDER BY name`,
 		companyID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to fetch locations")
@@ -182,13 +182,15 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	type Location struct {
-		ID        uuid.UUID `json:"id"`
-		CompanyID uuid.UUID `json:"company_id"`
-		Name      string    `json:"name"`
-		Address   string    `json:"address"`
-		IikoOrgID *string   `json:"iiko_org_id,omitempty"`
-		PosSystem string    `json:"pos_system"`
-		CreatedAt string    `json:"created_at"`
+		ID             uuid.UUID `json:"id"`
+		CompanyID      uuid.UUID `json:"company_id"`
+		Name           string    `json:"name"`
+		Address        string    `json:"address"`
+		IikoOrgID      *string   `json:"iiko_org_id,omitempty"`
+		PosSystem      string    `json:"pos_system"`
+		CurrencySymbol string    `json:"currency_symbol"`
+		Locale         string    `json:"locale"`
+		CreatedAt      string    `json:"created_at"`
 	}
 
 	var locations []Location
@@ -196,14 +198,30 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		var loc Location
 		var address *string
 		var iikoOrgID *string
+		var posSystem *string
+		var currencySymbol *string
+		var localeVal *string
 		var createdAt time.Time
-		if err := rows.Scan(&loc.ID, &loc.CompanyID, &loc.Name, &address, &iikoOrgID, &loc.PosSystem, &createdAt); err != nil {
+		if err := rows.Scan(&loc.ID, &loc.CompanyID, &loc.Name, &address, &iikoOrgID, &posSystem, &currencySymbol, &localeVal, &createdAt); err != nil {
 			continue
 		}
 		if address != nil {
 			loc.Address = *address
 		}
 		loc.IikoOrgID = iikoOrgID
+		if posSystem != nil {
+			loc.PosSystem = *posSystem
+		}
+		if currencySymbol != nil {
+			loc.CurrencySymbol = *currencySymbol
+		} else {
+			loc.CurrencySymbol = "₸"
+		}
+		if localeVal != nil {
+			loc.Locale = *localeVal
+		} else {
+			loc.Locale = "ru-KZ"
+		}
 		loc.CreatedAt = createdAt.Format(time.RFC3339)
 		locations = append(locations, loc)
 	}
@@ -242,10 +260,16 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	companyID := middleware.GetCompanyID(r.Context())
 	id := uuid.New()
 
+	// Inherit currency from company defaults
+	var companyCurrencySymbol, companyLocale *string
+	_ = h.db.QueryRow(r.Context(),
+		`SELECT currency_symbol, locale FROM companies WHERE id = $1`, companyID).
+		Scan(&companyCurrencySymbol, &companyLocale)
+
 	_, err := h.db.Exec(r.Context(),
-		`INSERT INTO locations (id, company_id, name, city, address, pos_system, iiko_org_id, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())`,
-		id, companyID, input.Name, nilIfEmpty(input.City), input.Address, nilIfEmpty(input.PosSystem), nilIfEmpty(input.IikoOrgID))
+		`INSERT INTO locations (id, company_id, name, city, address, pos_system, iiko_org_id, currency_symbol, locale, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, '₸'), COALESCE($9, 'ru-KZ'), NOW(), NOW())`,
+		id, companyID, input.Name, nilIfEmpty(input.City), input.Address, nilIfEmpty(input.PosSystem), nilIfEmpty(input.IikoOrgID), companyCurrencySymbol, companyLocale)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create location")
 		return
@@ -449,9 +473,16 @@ func (h *Handler) runMultiLocationSync(companyID, placeholderID uuid.UUID, iikoU
 
 	logger.Info().Int("departments", len(depts)).Msg("trigger-sync: discovered iiko departments")
 
+	// Check if placeholder is already bound to a department (re-run of TriggerSync).
+	// If so, treat it as consumed so we don't try to reassign it.
+	var placeholderOrgID string
+	h.db.QueryRow(ctx,
+		`SELECT COALESCE(iiko_org_id, '') FROM locations WHERE id = $1`,
+		placeholderID).Scan(&placeholderOrgID)
+	placeholderUsed := placeholderOrgID != ""
+
 	// Find or create a location for each department. Never overwrite existing locations.
 	locationIDs := make([]uuid.UUID, len(depts))
-	placeholderUsed := false
 
 	for i, dept := range depts {
 		// Check if a location with this iiko_org_id already exists
