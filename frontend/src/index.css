@@ -34,47 +34,41 @@
   --radius-full: 9999px;
 }
 
-/* Mobile-first base (375px target) */
-html {
+/* Mobile-first base. Capacitor's contentInset:'always' handles safe-areas
+   natively — no env() hacks needed. */
+html, body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-body {
   margin: 0;
   background-color: var(--color-bg);
   color: var(--color-dark);
-  min-height: 100dvh;
-  /* Block mobile browsers from trying to "improve" text sizes. */
   -webkit-text-size-adjust: 100%;
-  /* Disable pull-to-refresh / bounce on iOS webviews. */
-  overscroll-behavior-y: contain;
-  /* Honor the notch/home-indicator safe area when content goes fullbleed. */
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
+  /* html+body don't scroll — #root does. This makes position:fixed
+     (Tabbar) truly fixed because the viewport never moves. */
+  overflow: hidden;
+  height: 100%;
+  /* Status bar spacing handled by Capacitor contentInset:'always'. */
 }
 
-/* On narrow screens (real phones, Capacitor WebView) use full width.
-   On wider screens (desktop browser preview) cap at 375px so the mobile
-   layout stays representative. */
+/* Desktop preview: cap at 375px */
 @media (min-width: 640px) {
   body {
     max-width: 375px;
     margin-inline: auto;
-    padding-top: 0;
-    padding-bottom: 0;
   }
 }
 
 #root {
-  min-height: 100dvh;
+  height: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: none;
   display: flex;
   flex-direction: column;
 }
 
-/* Disable double-tap-to-zoom and iOS tap highlight rectangles that feel
-   web-y inside a native webview wrapper. */
+/* Disable double-tap-to-zoom and iOS tap highlight rectangles. */
 button, a {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;

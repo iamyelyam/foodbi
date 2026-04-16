@@ -48,7 +48,7 @@ export function OrderDetailPage() {
   return (
     <div className="flex flex-col min-h-dvh bg-bg">
       <Header title={t('orderDetail.title', { id: id?.slice(0, 8) || '' })} showBack />
-      <main className="flex-1 px-4 pt-4 pb-20 space-y-3">
+      <main className="flex-1 px-4 pt-4 pb-28 space-y-3">
         {isLoading ? (
           <>
             <ListItemSkeleton />

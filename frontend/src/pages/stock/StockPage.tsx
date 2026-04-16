@@ -255,7 +255,7 @@ export function StockPage() {
         </ChipButton>
       </div>
 
-      <main className="flex-1 px-4 pb-20">
+      <main className="flex-1 px-4 pb-28">
         {isLoading ? (
           <div className="space-y-2">
             <ListItemSkeleton />

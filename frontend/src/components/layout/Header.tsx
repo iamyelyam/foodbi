@@ -21,7 +21,7 @@ export function Header({ title, subtitle, showBack = false, showNotification = f
   const navigate = useNavigate()
 
   return (
-    <header className={cn('flex h-14 items-center justify-between px-4 bg-white', className)}>
+    <header className={cn('sticky top-0 z-40 flex items-center justify-between px-4 py-4 bg-white', className)}>
       <div className="flex items-center gap-2">
         {showBack && (
           <button onClick={() => navigate(-1)} className="p-1 -ml-1">

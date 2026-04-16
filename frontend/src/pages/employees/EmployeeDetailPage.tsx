@@ -45,7 +45,7 @@ export function EmployeeDetailPage() {
   return (
     <div className="flex flex-col min-h-dvh bg-bg">
       <Header title={emp ? `${emp.first_name} ${emp.last_name}` : t('employees.employeeTitle')} showBack />
-      <main className="flex-1 px-4 pt-4 pb-20 space-y-3">
+      <main className="flex-1 px-4 pt-4 pb-28 space-y-3">
         {isLoading ? <><ListItemSkeleton /><ListItemSkeleton /></> : emp ? (
           <>
             <div className="bg-white rounded-[16px] p-6 shadow-sm flex flex-col items-center">

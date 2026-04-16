@@ -9,7 +9,7 @@ import { DateRangeBlock } from '@/components/ui/date-range-block'
 import { useOrders, useProducts, useUnreadNotificationCount } from '@/hooks/useApi'
 import { Filter, ChevronRight, ShoppingBag, Calendar, Coins, ShoppingCart, Receipt, Package } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useCurrency } from '@/stores/app'
+import { useAppStore, useCurrency } from '@/stores/app'
 import { useT, useI18nStore } from '@/i18n'
 import { formatProductName, formatPersonName } from '@/lib/format'
 import { RevenueChart } from '@/components/charts/RevenueChart'
@@ -54,8 +54,9 @@ export function RevenuePage() {
   const [tab, setTab] = useState<Tab>('orders')
   const [showFilters, setShowFilters] = useState(false)
   // (date range custom picking is now embedded inside <DateRangeBlock>)
-  const [dateFrom, setDateFrom] = useState<string>(todayIso())
-  const [dateTo, setDateTo] = useState<string>(todayIso())
+  const dateFrom = useAppStore((s) => s.dateFrom)
+  const dateTo = useAppStore((s) => s.dateTo)
+  const setDateRange = useAppStore((s) => s.setDateRange)
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null)
   const [selectedMetric, setSelectedMetric] = useState<null | 'revenue' | 'orders' | 'aov' | 'mit'>(null)
@@ -207,7 +208,7 @@ export function RevenuePage() {
         </div>
       </div>
 
-      <main className="flex-1 px-4 pb-20">
+      <main className="flex-1 px-4 pb-28">
         {(tab === 'orders' ? ordersLoading : productsLoading) ? (
           <div className="space-y-2">
             <CardSkeleton />
@@ -393,7 +394,7 @@ export function RevenuePage() {
           <DateRangeBlock
             from={dateFrom}
             to={dateTo}
-            onChange={(f, t) => { setDateFrom(f); setDateTo(t) }}
+            onChange={(f, t) => setDateRange(f, t)}
           />
 
           <hr className="border-bg-alt" />

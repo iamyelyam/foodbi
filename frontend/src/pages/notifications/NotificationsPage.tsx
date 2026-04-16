@@ -93,7 +93,7 @@ export function NotificationsPage() {
         </div>
       )}
 
-      <main className="flex-1 px-4 pt-2 pb-20">
+      <main className="flex-1 px-4 pt-2 pb-28">
         {isLoading ? (
           <div className="space-y-2 mt-4">
             <ListItemSkeleton />

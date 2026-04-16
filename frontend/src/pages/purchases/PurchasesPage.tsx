@@ -11,21 +11,14 @@ import { Filter, ChevronRight, Calendar, Coins, Receipt, ScanLine, Pencil, Check
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
 import { formatProductName, formatSupplierName } from '@/lib/format'
-import { useCurrency } from '@/stores/app'
+import { useAppStore, useCurrency } from '@/stores/app'
 import { useT, useI18nStore } from '@/i18n'
 
 function formatDay(dateStr: string, locale: string = 'en'): string {
   const d = new Date(dateStr + 'T00:00:00')
   return d.toLocaleDateString(locale, { month: 'long', day: 'numeric' })
 }
-function todayIso(): string {
-  return new Date().toISOString().split('T')[0]
-}
-function isoDaysAgo(days: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() - days)
-  return d.toISOString().split('T')[0]
-}
+// todayIso / isoDaysAgo removed — dates now from global useAppStore
 const formatMoney = (v: number) => v.toLocaleString('ru-KZ', { maximumFractionDigits: 0 })
 
 export function PurchasesPage() {
@@ -35,8 +28,9 @@ export function PurchasesPage() {
   const navigate = useNavigate()
 
   // Purchases happen less often than orders — default to last 30 days.
-  const [dateFrom, setDateFrom] = useState<string>(isoDaysAgo(30))
-  const [dateTo, setDateTo] = useState<string>(todayIso())
+  const dateFrom = useAppStore((s) => s.dateFrom)
+  const dateTo = useAppStore((s) => s.dateTo)
+  const setDateRange = useAppStore((s) => s.setDateRange)
   const [showRangePicker, setShowRangePicker] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [suppliersFilter, setSuppliersFilter] = useState<Set<string>>(new Set())
@@ -136,7 +130,7 @@ export function PurchasesPage() {
         </button>
       </div>
 
-      <main className="flex-1 px-4 pb-20">
+      <main className="flex-1 px-4 pb-28">
         {purchasesLoading ? (
           <div className="space-y-2">
             <CardSkeleton />
@@ -359,7 +353,7 @@ export function PurchasesPage() {
         onClose={() => setShowRangePicker(false)}
         from={dateFrom}
         to={dateTo}
-        onChange={(f, t) => { setDateFrom(f); setDateTo(t) }}
+        onChange={(f, t) => setDateRange(f, t)}
         resultsCount={purchases.length}
       />
     </div>

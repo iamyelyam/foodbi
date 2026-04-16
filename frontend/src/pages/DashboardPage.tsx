@@ -21,8 +21,9 @@ export function DashboardPage() {
   const [view, setView] = useState<View>('revenue')
   const [showLocations, setShowLocations] = useState(false)
   const [showDatePicker, setShowDatePicker] = useState(false)
-  const [dateFrom, setDateFrom] = useState<string | undefined>()
-  const [dateTo, setDateTo] = useState<string | undefined>()
+  const dateFrom = useAppStore((s) => s.dateFrom)
+  const dateTo = useAppStore((s) => s.dateTo)
+  const setDateRange = useAppStore((s) => s.setDateRange)
   const selectedLocationIds = useAppStore((s) => s.selectedLocationIds)
   const showUploadInvoicesBanner = useAppStore((s) => s.uiPrefs.showUploadInvoicesBanner)
   const cs = useCurrency()
@@ -73,7 +74,7 @@ export function DashboardPage() {
   return (
     <div className="flex flex-col min-h-dvh bg-white">
       {/* Header */}
-      <header className="flex items-center justify-between px-4 h-14">
+      <header className="sticky top-0 z-40 flex items-center justify-between px-4 py-4 bg-white">
         <button onClick={() => setShowLocations(true)} className="flex items-center gap-1.5">
           <MapPin className="h-6 w-6 text-dark" strokeWidth={1.5} />
           <span className="text-base text-dark">{locationName}</span>
@@ -283,7 +284,7 @@ export function DashboardPage() {
         onClose={() => setShowDatePicker(false)}
         from={dateFrom ?? todayIso()}
         to={dateTo ?? todayIso()}
-        onChange={(f, t) => { setDateFrom(f); setDateTo(t) }}
+        onChange={(f, t) => setDateRange(f, t)}
       />
     </div>
   )

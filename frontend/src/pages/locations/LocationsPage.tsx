@@ -82,7 +82,7 @@ export function LocationsPage() {
     <div className="flex flex-col min-h-dvh bg-bg">
       <Header title={t('locations.title')} showBack showNotification badgeCount={unreadCount} />
 
-      <main className="flex-1 px-4 pt-4 pb-20">
+      <main className="flex-1 px-4 pt-4 pb-28">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-base font-semibold text-dark">
             {locations.length === 1

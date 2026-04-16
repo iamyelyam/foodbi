@@ -53,7 +53,7 @@ export function BottomSheet({ isOpen, onClose, title, children, className }: Bot
       />
       <div
         className={cn(
-          'fixed bottom-0 inset-x-0 mx-auto w-full max-w-[375px] bg-white rounded-t-[24px] z-50',
+          'fixed bottom-0 inset-x-0 mx-auto w-full sm:max-w-[375px] bg-white rounded-t-[24px] z-50',
           'transition-transform duration-300 ease-out will-change-transform',
           className
         )}

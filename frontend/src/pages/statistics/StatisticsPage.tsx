@@ -106,7 +106,7 @@ export function StatisticsPage() {
         </div>
       )}
 
-      <main className="flex-1 px-4 pb-20 space-y-3">
+      <main className="flex-1 px-4 pb-28 space-y-3">
         {tab === 'revenue' && (
           <>
             {/* Summary cards */}

@@ -32,7 +32,16 @@ function writeUiPrefs(p: UiPrefs) {
   }
 }
 
+// Global date range — shared across Revenue, Purchases, Dashboard, Statistics.
+// Changing on one page reflects everywhere. Default: today.
+const todayStr = () => new Date().toISOString().split('T')[0]
+const thirtyDaysAgo = () => new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]
+
 interface AppState {
+  // Global date filter
+  dateFrom: string
+  dateTo: string
+  setDateRange: (from: string, to: string) => void
   // Multi-select location filter. Empty array == "all locations".
   selectedLocationIds: string[]
   // Derived: when exactly 1 location selected → its id. Else null.
@@ -48,6 +57,9 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set) => ({
+  dateFrom: thirtyDaysAgo(),
+  dateTo: todayStr(),
+  setDateRange: (from, to) => set({ dateFrom: from, dateTo: to }),
   selectedLocationIds: [],
   activeLocationId: null,
   setSelectedLocations: (ids) =>

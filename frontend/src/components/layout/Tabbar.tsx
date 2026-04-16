@@ -13,9 +13,12 @@ export function Tabbar() {
   ]
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-50 bg-white pb-[env(safe-area-inset-bottom)]">
-      <div className="h-[2px] bg-bg-alt" />
-      <div className="flex items-center justify-around h-[62px] px-4">
+    <nav className="fixed inset-x-0 bottom-0 z-50 bg-white">
+      {/* Top divider */}
+      <div className="h-[1px] bg-bg-alt" />
+
+      {/* Tab icons + labels — minimal padding to push as low as possible */}
+      <div className="flex items-center justify-around px-4 pt-1.5 pb-0.5">
         {tabs.map(({ to, icon, label }) => (
           <NavLink
             key={to}
@@ -23,16 +26,18 @@ export function Tabbar() {
             end={to === '/'}
             className={({ isActive }) =>
               cn(
-                'flex flex-col items-center gap-1 px-3 pt-2',
+                'flex flex-col items-center gap-1 px-3',
                 isActive ? 'opacity-100' : 'opacity-40'
               )
             }
           >
-            <img src={icon} alt={label} className="h-8 w-8" />
+            <img src={icon} alt={label} className="h-7 w-7" />
             <span className="text-[10px] font-semibold text-dark">{label}</span>
           </NavLink>
         ))}
       </div>
+
+      {/* No safe-area spacer — Capacitor contentInset:'always' handles it natively */}
     </nav>
   )
 }

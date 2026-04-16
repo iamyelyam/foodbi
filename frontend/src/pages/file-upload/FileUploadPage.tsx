@@ -176,7 +176,7 @@ export function FileUploadPage() {
     <div className="flex flex-col min-h-dvh bg-bg">
       <Header title={t('fileUpload.pageTitle')} showBack showNotification badgeCount={unreadCount} />
 
-      <main className="flex-1 px-4 pt-4 pb-20 space-y-4">
+      <main className="flex-1 px-4 pt-4 pb-28 space-y-4">
         {/* Upload actions */}
         <div className="grid grid-cols-2 gap-3">
           <button

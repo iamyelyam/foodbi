@@ -141,7 +141,7 @@ export function SupplyingPage() {
         )}
       </div>
 
-      <main className="flex-1 px-4 pb-20 space-y-2">
+      <main className="flex-1 px-4 pb-28 space-y-2">
         {isLoading ? (
           <>
             <CardSkeleton />

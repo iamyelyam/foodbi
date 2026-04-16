@@ -25,7 +25,7 @@ export function EmployeeHomePage() {
     <div className="flex flex-col min-h-dvh bg-bg">
       <Header title="FoodBI" showNotification badgeCount={unreadCount} />
 
-      <main className="flex-1 px-4 pt-4 pb-20 space-y-3">
+      <main className="flex-1 px-4 pt-4 pb-28 space-y-3">
         {isLoading ? (
           <CardSkeleton />
         ) : (
