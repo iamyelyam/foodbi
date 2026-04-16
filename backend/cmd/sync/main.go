@@ -62,6 +62,13 @@ func main() {
 		runSync(ctx, syncService, "recipes")
 	})
 
+	// Queue poller: picks up manual "Sync Now" requests every 10 seconds
+	go runTicker(ctx, 10*time.Second, "queue", func() {
+		if err := syncService.ProcessQueue(ctx); err != nil {
+			log.Error().Err(err).Msg("sync: queue processing error")
+		}
+	})
+
 	// Run initial sync immediately
 	go runSync(ctx, syncService, "all")
 

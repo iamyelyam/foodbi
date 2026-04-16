@@ -667,6 +667,114 @@ func (s *Service) QueueSync(ctx context.Context, companyID, locationID uuid.UUID
 	return nil
 }
 
+// ProcessQueue picks up "queued" sync log entries and runs them immediately.
+// Called by the queue poller goroutine every 10 seconds.
+func (s *Service) ProcessQueue(ctx context.Context) error {
+	type queuedItem struct {
+		ID         uuid.UUID
+		CompanyID  uuid.UUID
+		LocationID uuid.UUID
+		SyncType   string
+	}
+
+	rows, err := s.db.Query(ctx,
+		`SELECT id, company_id, location_id, sync_type
+		 FROM iiko_sync_log
+		 WHERE status = 'queued'
+		 ORDER BY started_at
+		 LIMIT 50`)
+	if err != nil {
+		return fmt.Errorf("query queue: %w", err)
+	}
+	defer rows.Close()
+
+	var items []queuedItem
+	for rows.Next() {
+		var item queuedItem
+		if err := rows.Scan(&item.ID, &item.CompanyID, &item.LocationID, &item.SyncType); err != nil {
+			continue
+		}
+		items = append(items, item)
+	}
+
+	if len(items) == 0 {
+		return nil
+	}
+
+	log.Info().Int("count", len(items)).Msg("sync: processing queued items")
+
+	// Group by company to share iiko client
+	type companyKey struct{ companyID uuid.UUID }
+	clientCache := map[uuid.UUID]*iiko.Client{}
+
+	for _, item := range items {
+		// Mark as running
+		s.db.Exec(ctx,
+			`UPDATE iiko_sync_log SET status = 'running' WHERE id = $1`, item.ID)
+
+		start := time.Now()
+
+		// Get or create iiko client for this company
+		client, ok := clientCache[item.CompanyID]
+		if !ok {
+			var iikoURL, iikoLogin, iikoPass string
+			err := s.db.QueryRow(ctx,
+				`SELECT iiko_server_url, iiko_login, iiko_password FROM companies
+				 WHERE id = $1 AND iiko_server_url IS NOT NULL AND iiko_server_url != ''`,
+				item.CompanyID).Scan(&iikoURL, &iikoLogin, &iikoPass)
+			if err != nil {
+				s.failSyncLog(ctx, item.ID, start, fmt.Errorf("no iiko config"))
+				continue
+			}
+			client = iiko.NewClient(iikoURL, iikoLogin, iikoPass)
+			if err := client.Authenticate(ctx); err != nil {
+				s.failSyncLog(ctx, item.ID, start, fmt.Errorf("iiko auth: %w", err))
+				continue
+			}
+			clientCache[item.CompanyID] = client
+		}
+
+		// Get iiko_org_id for this location
+		var iikoOrgID string
+		s.db.QueryRow(ctx,
+			`SELECT COALESCE(iiko_org_id, '') FROM locations WHERE id = $1`,
+			item.LocationID).Scan(&iikoOrgID)
+
+		// Delete the queued log entry — the sync method creates its own running entry
+		s.db.Exec(ctx, `DELETE FROM iiko_sync_log WHERE id = $1`, item.ID)
+
+		// Run the appropriate sync
+		var syncErr error
+		switch item.SyncType {
+		case "revenue":
+			syncErr = s.SyncRevenue(ctx, client, item.CompanyID, item.LocationID, iikoOrgID)
+		case "product_sales":
+			syncErr = s.SyncProductSales(ctx, client, item.CompanyID, item.LocationID, iikoOrgID)
+		case "purchases":
+			syncErr = s.SyncPurchases(ctx, client, item.CompanyID, item.LocationID, iikoOrgID)
+		case "stock":
+			syncErr = s.SyncStock(ctx, client, item.CompanyID, item.LocationID, iikoOrgID)
+		case "recipes":
+			syncErr = s.SyncRecipes(ctx, client, item.CompanyID, item.LocationID, iikoOrgID)
+		default:
+			log.Warn().Str("type", item.SyncType).Msg("sync: unknown queued sync type")
+			continue
+		}
+
+		if syncErr != nil {
+			log.Error().Err(syncErr).Str("type", item.SyncType).Msg("sync: queued item failed")
+		}
+	}
+
+	// Refresh dashboard views after processing queue
+	if err := s.RefreshDashboardViews(ctx); err != nil {
+		log.Warn().Err(err).Msg("sync: dashboard refresh after queue failed")
+	}
+
+	log.Info().Int("processed", len(items)).Msg("sync: queue processing complete")
+	return nil
+}
+
 func (s *Service) startSyncLog(ctx context.Context, companyID uuid.UUID, locationID uuid.UUID, syncType string) (uuid.UUID, error) {
 	id := uuid.New()
 	_, err := s.db.Exec(ctx,

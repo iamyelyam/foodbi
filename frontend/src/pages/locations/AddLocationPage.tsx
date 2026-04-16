@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, Loader2, CheckCircle, XCircle } from 'lucide-react'
@@ -91,11 +91,43 @@ export function AddLocationPage() {
   const failedTypes = syncStatus.filter(
     (s: any) => s.location_id === locationId && s.status === 'failed'
   )
-  const progressPercent = Math.round(
+  const realProgress = Math.round(
     ((completedTypes.length + failedTypes.length) / syncTypes.length) * 100
   )
-  const allDone = completedTypes.length + failedTypes.length >= syncTypes.length
   const hasFailures = failedTypes.length > 0
+
+  // Smooth progress: animate from 0 to real value, minimum 5 seconds display
+  const [displayProgress, setDisplayProgress] = useState(0)
+  const [syncStartTime] = useState(() => Date.now())
+  const [showDoneScreen, setShowDoneScreen] = useState(false)
+
+  useEffect(() => {
+    if (step !== 'syncing') return
+    const timer = setInterval(() => {
+      setDisplayProgress((prev) => {
+        // Smoothly approach real progress, but cap at 95% until truly done
+        const target = realProgress >= 100 ? 100 : Math.min(realProgress, 95)
+        if (prev >= target) return prev
+        return Math.min(prev + 2, target)
+      })
+    }, 100)
+    return () => clearInterval(timer)
+  }, [step, realProgress])
+
+  // Only show "Done" screen after all checks are green AND minimum 5s elapsed
+  const reallyDone = completedTypes.length + failedTypes.length >= syncTypes.length
+  useEffect(() => {
+    if (!reallyDone || step !== 'syncing') return
+    const elapsed = Date.now() - syncStartTime
+    const remaining = Math.max(0, 5000 - elapsed)
+    // Ensure progress bar fills to 100% before showing done
+    setDisplayProgress(100)
+    const timeout = setTimeout(() => setShowDoneScreen(true), remaining + 500)
+    return () => clearTimeout(timeout)
+  }, [reallyDone, step, syncStartTime])
+
+  const progressPercent = displayProgress
+  const allDone = showDoneScreen
 
   const handleStep1Next = () => {
     if (posSystem === 'iiko') {
