@@ -33,6 +33,22 @@ func NewService(db *pgxpool.Pool) *Service {
 	return &Service{db: db}
 }
 
+// jwtSecret returns the JWT signing secret from env. In production (ENV=production),
+// a missing or default secret is a fatal misconfiguration — we return empty string
+// and let the caller fail (signing will fail with empty key → 500).
+// Non-production falls back to a dev secret so local testing works without setup.
+func jwtSecret() string {
+	secret := os.Getenv("JWT_SECRET")
+	if secret != "" && secret != "dev-secret-change-in-production" {
+		return secret
+	}
+	if os.Getenv("ENV") == "production" {
+		// Fail-hard in production: empty secret means sign fails → 500 → ops must fix
+		return ""
+	}
+	return "dev-secret-change-in-production"
+}
+
 type RegisterInput struct {
 	Email     string      `json:"email" validate:"required,email"`
 	Password  string      `json:"password" validate:"required,min=8"`
@@ -223,10 +239,7 @@ func (s *Service) GetUser(ctx context.Context, userID uuid.UUID) (*models.User, 
 }
 
 func (s *Service) generateTokenPair(ctx context.Context, user *models.User) (*TokenPair, error) {
-	secret := os.Getenv("JWT_SECRET")
-	if secret == "" {
-		secret = "dev-secret-change-in-production"
-	}
+	secret := jwtSecret()
 
 	expiresAt := time.Now().Add(15 * time.Minute)
 	claims := jwt.MapClaims{

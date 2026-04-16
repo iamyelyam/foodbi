@@ -25,6 +25,20 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
+// JWTSecret returns the JWT signing secret. In production (ENV=production),
+// a missing secret returns "" — callers must treat this as a fatal misconfiguration.
+// Non-production falls back to a dev secret.
+func JWTSecret() string {
+	secret := os.Getenv("JWT_SECRET")
+	if secret != "" && secret != "dev-secret-change-in-production" {
+		return secret
+	}
+	if os.Getenv("ENV") == "production" {
+		return ""
+	}
+	return "dev-secret-change-in-production"
+}
+
 func JWTAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		header := r.Header.Get("Authorization")
@@ -39,9 +53,10 @@ func JWTAuth(next http.Handler) http.Handler {
 			return
 		}
 
-		secret := os.Getenv("JWT_SECRET")
+		secret := JWTSecret()
 		if secret == "" {
-			secret = "dev-secret-change-in-production"
+			http.Error(w, `{"error":"server misconfigured: JWT_SECRET not set"}`, http.StatusInternalServerError)
+			return
 		}
 
 		token, err := jwt.ParseWithClaims(parts[1], &Claims{}, func(t *jwt.Token) (interface{}, error) {

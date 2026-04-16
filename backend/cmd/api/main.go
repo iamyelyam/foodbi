@@ -120,15 +120,24 @@ func main() {
 	// Webhook endpoints (no JWT auth — use HMAC signature per company)
 	r.Post("/api/v1/webhooks/payment/{companyID}", paymentHandler.HandleWebhook)
 
+	// Rate limiters to prevent brute-force and abuse.
+	// Per-IP sliding windows; tuned conservatively for mobile app usage.
+	loginLimiter := middleware.NewRateLimiter(10, time.Minute)            // 10 logins/min per IP
+	registerLimiter := middleware.NewRateLimiter(5, time.Hour)            // 5 registrations/hour per IP
+	forgotLimiter := middleware.NewRateLimiter(5, 10*time.Minute)         // 5 password-reset triggers/10min per IP
+	defer loginLimiter.Close()
+	defer registerLimiter.Close()
+	defer forgotLimiter.Close()
+
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
-			r.Post("/register", authHandler.Register)
-			r.Post("/login", authHandler.Login)
-			r.Post("/verify-otp", authHandler.VerifyOTP)
+			r.With(registerLimiter.Middleware).Post("/register", authHandler.Register)
+			r.With(loginLimiter.Middleware).Post("/login", authHandler.Login)
+			r.With(loginLimiter.Middleware).Post("/verify-otp", authHandler.VerifyOTP)
 			r.Post("/refresh", authHandler.RefreshToken)
-			r.Post("/accept-invite", authHandler.AcceptInvite)
-			r.Post("/forgot-password", authHandler.ForgotPassword)
-			r.Post("/reset-password", authHandler.ResetPassword)
+			r.With(registerLimiter.Middleware).Post("/accept-invite", authHandler.AcceptInvite)
+			r.With(forgotLimiter.Middleware).Post("/forgot-password", authHandler.ForgotPassword)
+			r.With(forgotLimiter.Middleware).Post("/reset-password", authHandler.ResetPassword)
 		})
 
 		r.Group(func(r chi.Router) {
