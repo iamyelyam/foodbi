@@ -51,7 +51,7 @@ type PurchasesResponse struct {
 
 func (h *Handler) ListPurchases(w http.ResponseWriter, r *http.Request) {
 	companyID := middleware.GetCompanyID(r.Context())
-	locationID := r.URL.Query().Get("location_id")
+	locIDs := middleware.ParseLocationFilter(r)
 	supplierID := r.URL.Query().Get("supplier_id")
 	dateFrom := r.URL.Query().Get("date_from")
 	dateTo := r.URL.Query().Get("date_to")
@@ -80,14 +80,12 @@ func (h *Handler) ListPurchases(w http.ResponseWriter, r *http.Request) {
 		WHERE pf.company_id = $1`
 	countQuery := `SELECT COUNT(*) FROM purchase_facts WHERE company_id = $1`
 	args := []interface{}{companyID}
-	argIdx := 2
 
-	if locationID != "" {
-		query += ` AND pf.location_id = $` + strconv.Itoa(argIdx)
-		countQuery += ` AND location_id = $` + strconv.Itoa(argIdx)
-		args = append(args, locationID)
-		argIdx++
-	}
+	locFilter, args := middleware.AddLocationFilter(args, locIDs)
+	query += locFilter
+	countQuery += locFilter
+	argIdx := len(args) + 1
+
 	if supplierID != "" {
 		query += ` AND pf.supplier_id = $` + strconv.Itoa(argIdx)
 		countQuery += ` AND supplier_id = $` + strconv.Itoa(argIdx)

@@ -26,16 +26,22 @@ func formatProductName(name string) string {
 }
 
 type Handler struct {
-	db *pgxpool.Pool
+	db     *pgxpool.Pool
+	openai *OpenAIClient
 }
 
-func NewHandler(db *pgxpool.Pool) *Handler {
-	return &Handler{db: db}
+func NewHandler(db *pgxpool.Pool, openaiKey string) *Handler {
+	var oc *OpenAIClient
+	if openaiKey != "" {
+		oc = NewOpenAIClient(openaiKey)
+	}
+	return &Handler{db: db, openai: oc}
 }
 
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
 	r.Get("/suggestions", h.GetSuggestions)
+	r.Post("/suggestions/generate", h.GenerateSuggestions)
 	r.Post("/tasks", h.CreateTask)
 	r.Get("/tasks", h.ListTasks)
 	return r
@@ -84,9 +90,37 @@ type SuggestionsResponse struct {
 	Suggestions []Suggestion `json:"suggestions"`
 }
 
+// parseLocationIDs extracts location_id (single) or location_ids (comma-separated) from query.
+func parseLocationIDs(r *http.Request) []string {
+	if ids := r.URL.Query().Get("location_ids"); ids != "" {
+		parts := strings.Split(ids, ",")
+		var out []string
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				out = append(out, p)
+			}
+		}
+		return out
+	}
+	if id := r.URL.Query().Get("location_id"); id != "" {
+		return []string{id}
+	}
+	return nil
+}
+
 func (h *Handler) GetSuggestions(w http.ResponseWriter, r *http.Request) {
 	companyID := middleware.GetCompanyID(r.Context())
-	locationID := r.URL.Query().Get("location_id")
+	locationIDs := parseLocationIDs(r)
+
+	// Helper: append location filter to a query. Returns the updated query + args.
+	addLocFilter := func(q string, args []interface{}, col string) (string, []interface{}) {
+		if len(locationIDs) > 0 {
+			q += fmt.Sprintf(` AND %s = ANY($%d)`, col, len(args)+1)
+			args = append(args, locationIDs)
+		}
+		return q, args
+	}
 
 	// Generate suggestions based on existing data patterns
 	var suggestions []Suggestion
@@ -96,10 +130,7 @@ func (h *Handler) GetSuggestions(w http.ResponseWriter, r *http.Request) {
 	var topRevenue float64
 	args := []interface{}{companyID}
 	query := `SELECT product_name, SUM(revenue) FROM product_sales_facts WHERE company_id = $1`
-	if locationID != "" {
-		query += ` AND location_id = $2`
-		args = append(args, locationID)
-	}
+	query, args = addLocFilter(query, args, "location_id")
 	query += ` GROUP BY product_name ORDER BY SUM(revenue) DESC LIMIT 1`
 	h.db.QueryRow(r.Context(), query, args...).Scan(&topProduct, &topRevenue)
 
@@ -127,10 +158,7 @@ func (h *Handler) GetSuggestions(w http.ResponseWriter, r *http.Request) {
 	mQuery := `SELECT product_name, SUM(revenue) AS total_rev,
 		CASE WHEN SUM(revenue) > 0 THEN ((SUM(revenue) - SUM(cost_price)) / SUM(revenue)) * 100 ELSE 0 END as margin
 		FROM product_sales_facts WHERE company_id = $1 AND cost_price > 0`
-	if locationID != "" {
-		mQuery += ` AND location_id = $2`
-		mArgs = append(mArgs, locationID)
-	}
+	mQuery, mArgs = addLocFilter(mQuery, mArgs, "location_id")
 	mQuery += ` GROUP BY product_name HAVING SUM(revenue) > 0 ORDER BY margin ASC LIMIT 1`
 	h.db.QueryRow(r.Context(), mQuery, mArgs...).Scan(&lowMarginProduct, &lowMarginRevenue, &margin)
 
@@ -162,10 +190,7 @@ func (h *Handler) GetSuggestions(w http.ResponseWriter, r *http.Request) {
 	suspQuery := `SELECT product_name,
 		CASE WHEN SUM(revenue) > 0 THEN (1 - SUM(cost_price)/SUM(revenue)) * 100 ELSE 0 END as margin
 		FROM product_sales_facts WHERE company_id = $1`
-	if locationID != "" {
-		suspQuery += ` AND location_id = $2`
-		suspArgs = append(suspArgs, locationID)
-	}
+	suspQuery, suspArgs = addLocFilter(suspQuery, suspArgs, "location_id")
 	suspQuery += ` GROUP BY product_name
 		HAVING SUM(revenue) > 0
 		AND ((1 - SUM(cost_price)/SUM(revenue)) * 100 > 90
@@ -207,9 +232,9 @@ func (h *Handler) GetSuggestions(w http.ResponseWriter, r *http.Request) {
 	// Stock data issues — group negative amounts and unpriced items on the shelf
 	stockArgs := []interface{}{companyID}
 	stockLocFilter := ""
-	if locationID != "" {
-		stockLocFilter = " AND s.location_id = $2"
-		stockArgs = append(stockArgs, locationID)
+	if len(locationIDs) > 0 {
+		stockLocFilter = fmt.Sprintf(" AND s.location_id = ANY($%d)", len(stockArgs)+1)
+		stockArgs = append(stockArgs, locationIDs)
 	}
 	// Take the latest snapshot per product (stock is snapshotted over time)
 	stockQuery := `
@@ -305,10 +330,7 @@ func (h *Handler) GetSuggestions(w http.ResponseWriter, r *http.Request) {
 	var purchaseTotal float64
 	pArgs := []interface{}{companyID}
 	pQuery := `SELECT supplier_name, SUM(total_sum) FROM purchase_facts WHERE company_id = $1 AND supplier_name IS NOT NULL`
-	if locationID != "" {
-		pQuery += ` AND location_id = $2`
-		pArgs = append(pArgs, locationID)
-	}
+	pQuery, pArgs = addLocFilter(pQuery, pArgs, "location_id")
 	pQuery += ` GROUP BY supplier_name ORDER BY SUM(total_sum) DESC LIMIT 1`
 	h.db.QueryRow(r.Context(), pQuery, pArgs...).Scan(&supplierName, &purchaseTotal)
 
@@ -325,6 +347,43 @@ func (h *Handler) GetSuggestions(w http.ResponseWriter, r *http.Request) {
 			// Rule of thumb: a 5% volume discount on the top supplier compounds quickly.
 			GainAmount: purchaseTotal * 0.05,
 		})
+	}
+
+	// Merge AI-generated suggestions from the database (if any exist for selected locations).
+	if len(locationIDs) > 0 {
+		aiRows, aiErr := h.db.Query(r.Context(),
+			`SELECT id, suggestion_type, title, description, solution, impact, loss_amount, gain_amount
+			 FROM ai_generated_suggestions
+			 WHERE company_id = $1 AND location_id = ANY($2)
+			 ORDER BY created_at DESC`,
+			companyID, locationIDs)
+		if aiErr == nil {
+			defer aiRows.Close()
+			for aiRows.Next() {
+				var id, sType, title, desc, impact string
+				var solution *string
+				var loss, gain float64
+				if err := aiRows.Scan(&id, &sType, &title, &desc, &solution, &impact, &loss, &gain); err != nil {
+					continue
+				}
+				s := Suggestion{
+					ID:                id,
+					Type:              sType,
+					TitleKey:          "ai.s.aiGenerated.title",
+					TitleParams:       map[string]any{"text": title},
+					DescriptionKey:    "ai.s.aiGenerated.description",
+					DescriptionParams: map[string]any{"text": desc},
+					Impact:            impact,
+					LossAmount:        loss,
+					GainAmount:        gain,
+				}
+				if solution != nil && *solution != "" {
+					s.SolutionKey = "ai.s.aiGenerated.solution"
+					s.SolutionParams = map[string]any{"text": *solution}
+				}
+				suggestions = append(suggestions, s)
+			}
+		}
 	}
 
 	if suggestions == nil {
@@ -347,6 +406,138 @@ func (h *Handler) GetSuggestions(w http.ResponseWriter, r *http.Request) {
 	resp.Summary.Date = time.Now().Format("2006-01-02")
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) GenerateSuggestions(w http.ResponseWriter, r *http.Request) {
+	if h.openai == nil {
+		writeError(w, http.StatusServiceUnavailable, "AI generation is not configured")
+		return
+	}
+
+	companyID := middleware.GetCompanyID(r.Context())
+	locationID := r.URL.Query().Get("location_id")
+	if locationID == "" {
+		writeError(w, http.StatusBadRequest, "location_id is required")
+		return
+	}
+
+	// Collect restaurant data for this location.
+	type productData struct {
+		Name    string  `json:"name"`
+		Revenue float64 `json:"revenue"`
+		Cost    float64 `json:"cost"`
+		Margin  float64 `json:"margin_pct"`
+	}
+	type stockData struct {
+		Name   string  `json:"name"`
+		Amount float64 `json:"amount"`
+		Unit   string  `json:"unit"`
+		Cost   float64 `json:"cost_sum"`
+	}
+	type purchaseData struct {
+		Supplier string  `json:"supplier"`
+		Total    float64 `json:"total_sum"`
+	}
+
+	// Top 20 products by revenue
+	var products []productData
+	pRows, err := h.db.Query(r.Context(),
+		`SELECT product_name, SUM(revenue), SUM(cost_price),
+			CASE WHEN SUM(revenue) > 0 THEN (1 - SUM(cost_price)/SUM(revenue)) * 100 ELSE 0 END
+		 FROM product_sales_facts WHERE company_id = $1 AND location_id = $2
+		 GROUP BY product_name ORDER BY SUM(revenue) DESC LIMIT 20`,
+		companyID, locationID)
+	if err == nil {
+		defer pRows.Close()
+		for pRows.Next() {
+			var p productData
+			pRows.Scan(&p.Name, &p.Revenue, &p.Cost, &p.Margin)
+			p.Name = formatProductName(p.Name)
+			products = append(products, p)
+		}
+	}
+
+	// Latest stock snapshot
+	var stock []stockData
+	sRows, err := h.db.Query(r.Context(),
+		`SELECT DISTINCT ON (iiko_product_id) product_name, amount, unit, cost_sum
+		 FROM stock_snapshots WHERE company_id = $1 AND location_id = $2
+		 ORDER BY iiko_product_id, snapshot_at DESC LIMIT 30`,
+		companyID, locationID)
+	if err == nil {
+		defer sRows.Close()
+		for sRows.Next() {
+			var s stockData
+			sRows.Scan(&s.Name, &s.Amount, &s.Unit, &s.Cost)
+			s.Name = formatProductName(s.Name)
+			stock = append(stock, s)
+		}
+	}
+
+	// Top 10 suppliers
+	var purchases []purchaseData
+	puRows, err := h.db.Query(r.Context(),
+		`SELECT supplier_name, SUM(total_sum)
+		 FROM purchase_facts WHERE company_id = $1 AND location_id = $2 AND supplier_name IS NOT NULL
+		 GROUP BY supplier_name ORDER BY SUM(total_sum) DESC LIMIT 10`,
+		companyID, locationID)
+	if err == nil {
+		defer puRows.Close()
+		for puRows.Next() {
+			var p purchaseData
+			puRows.Scan(&p.Supplier, &p.Total)
+			purchases = append(purchases, p)
+		}
+	}
+
+	// Build context JSON
+	contextData := map[string]any{
+		"products":  products,
+		"stock":     stock,
+		"purchases": purchases,
+	}
+	dataJSON, _ := json.Marshal(contextData)
+
+	// Call OpenAI
+	aiSuggestions, rawResp, err := h.openai.GenerateSuggestions(r.Context(), string(dataJSON))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "AI generation failed: "+err.Error())
+		return
+	}
+
+	// Delete old AI suggestions for this location and save new ones.
+	h.db.Exec(r.Context(),
+		`DELETE FROM ai_generated_suggestions WHERE company_id = $1 AND location_id = $2`,
+		companyID, locationID)
+
+	var saved []Suggestion
+	for _, as := range aiSuggestions {
+		id := uuid.New()
+		h.db.Exec(r.Context(),
+			`INSERT INTO ai_generated_suggestions
+			 (id, company_id, location_id, suggestion_type, title, description, solution, impact, loss_amount, gain_amount, raw_ai_response)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+			id, companyID, locationID, as.Type, as.Title, as.Description, as.Solution, as.Impact, as.LossAmount, as.GainAmount, rawResp)
+
+		s := Suggestion{
+			ID:                id.String(),
+			Type:              as.Type,
+			TitleKey:          "ai.s.aiGenerated.title",
+			TitleParams:       map[string]any{"text": as.Title},
+			DescriptionKey:    "ai.s.aiGenerated.description",
+			DescriptionParams: map[string]any{"text": as.Description},
+			Impact:            as.Impact,
+			LossAmount:        as.LossAmount,
+			GainAmount:        as.GainAmount,
+		}
+		if as.Solution != "" {
+			s.SolutionKey = "ai.s.aiGenerated.solution"
+			s.SolutionParams = map[string]any{"text": as.Solution}
+		}
+		saved = append(saved, s)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"suggestions": saved})
 }
 
 type Task struct {

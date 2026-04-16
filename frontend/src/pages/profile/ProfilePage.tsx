@@ -8,8 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Toggle } from '@/components/ui/toggle'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
-import { User, Mail, Phone, Building2, LogOut, Users, MapPin } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { User, Mail, Phone, Building2, LogOut, Users, MapPin, Pencil } from 'lucide-react'
 import api from '@/lib/api'
 import { useI18nStore, LOCALE_NAMES, type Locale } from '@/i18n'
 import { useT } from '@/i18n'
@@ -58,20 +57,28 @@ export function ProfilePage() {
       <Header title={t('profile.title')} showBack />
 
       <main className="flex-1 px-4 pt-4 pb-28 space-y-3">
-        {/* Avatar + name + role badge */}
-        <div className="bg-white rounded-[16px] p-6 shadow-sm flex flex-col items-center">
-          <div className="w-20 h-20 rounded-full bg-primary-lighter flex items-center justify-center">
-            <User className="h-10 w-10 text-primary" />
+        {/* Compact profile header — avatar + name + phone + edit */}
+        <div className="bg-white rounded-[16px] p-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-full bg-primary-lighter flex items-center justify-center shrink-0">
+              <User className="h-6 w-6 text-primary" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-base font-bold text-dark truncate">
+                {profile?.first_name} {profile?.last_name}
+              </p>
+              <p className="text-sm text-gray truncate">
+                {profile?.phone || profile?.email || t('common.notSet')}
+              </p>
+            </div>
+            <button
+              onClick={() => setEditing(true)}
+              className="w-9 h-9 rounded-full bg-bg flex items-center justify-center shrink-0 active:opacity-70"
+              aria-label="Edit"
+            >
+              <Pencil className="h-4 w-4 text-gray" />
+            </button>
           </div>
-          <p className="mt-3 text-lg font-bold text-dark">
-            {profile?.first_name} {profile?.last_name}
-          </p>
-          <span className={cn(
-            'text-xs px-3 py-1 rounded-full font-medium capitalize mt-1',
-            profile?.role === 'owner' ? 'bg-warning/10 text-warning' : 'bg-primary-lighter text-primary'
-          )}>
-            {profile?.role}
-          </span>
         </div>
 
         {/* Info or edit form */}
@@ -98,9 +105,6 @@ export function ProfilePage() {
                 <p className="text-sm text-dark">{profile?.company_name}</p>
               </div>
             </div>
-            <Button variant="secondary" fullWidth onClick={() => setEditing(true)}>
-              {t('common.edit')} {t('profile.title')}
-            </Button>
           </div>
         ) : (
           <div className="bg-white rounded-[16px] p-4 shadow-sm space-y-4">

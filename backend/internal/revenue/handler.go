@@ -53,7 +53,7 @@ type OrdersResponse struct {
 
 func (h *Handler) ListOrders(w http.ResponseWriter, r *http.Request) {
 	companyID := middleware.GetCompanyID(r.Context())
-	locationID := r.URL.Query().Get("location_id")
+	locIDs := middleware.ParseLocationFilter(r)
 	status := r.URL.Query().Get("status")
 	dateFrom := r.URL.Query().Get("date_from")
 	dateTo := r.URL.Query().Get("date_to")
@@ -68,14 +68,12 @@ func (h *Handler) ListOrders(w http.ResponseWriter, r *http.Request) {
 		FROM revenue_facts WHERE company_id = $1`
 	countQuery := `SELECT COUNT(*) FROM revenue_facts WHERE company_id = $1`
 	args := []interface{}{companyID}
-	argIdx := 2
 
-	if locationID != "" {
-		query += ` AND location_id = $` + strconv.Itoa(argIdx)
-		countQuery += ` AND location_id = $` + strconv.Itoa(argIdx)
-		args = append(args, locationID)
-		argIdx++
-	}
+	locFilter, args := middleware.AddLocationFilter(args, locIDs)
+	query += locFilter
+	countQuery += locFilter
+	argIdx := len(args) + 1
+
 	if status != "" {
 		query += ` AND status = $` + strconv.Itoa(argIdx)
 		countQuery += ` AND status = $` + strconv.Itoa(argIdx)
@@ -200,7 +198,7 @@ type ProductSummary struct {
 
 func (h *Handler) ListProducts(w http.ResponseWriter, r *http.Request) {
 	companyID := middleware.GetCompanyID(r.Context())
-	locationID := r.URL.Query().Get("location_id")
+	locIDs := middleware.ParseLocationFilter(r)
 	dateFrom := r.URL.Query().Get("date_from")
 	dateTo := r.URL.Query().Get("date_to")
 
@@ -208,13 +206,11 @@ func (h *Handler) ListProducts(w http.ResponseWriter, r *http.Request) {
 		SUM(quantity), SUM(revenue), SUM(cost_price)
 		FROM product_sales_facts WHERE company_id = $1`
 	args := []interface{}{companyID}
-	argIdx := 2
 
-	if locationID != "" {
-		query += ` AND location_id = $` + strconv.Itoa(argIdx)
-		args = append(args, locationID)
-		argIdx++
-	}
+	locFilter, args := middleware.AddLocationFilter(args, locIDs)
+	query += locFilter
+	argIdx := len(args) + 1
+
 	if dateFrom != "" {
 		query += ` AND sale_date >= $` + strconv.Itoa(argIdx)
 		args = append(args, dateFrom)

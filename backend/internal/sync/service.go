@@ -36,6 +36,17 @@ type LocationSync struct {
 	Name       string
 }
 
+// getDeptName returns the location name (which equals the iiko department name)
+// for use as an OLAP Department filter. Returns "" if no name is found.
+func (s *Service) getDeptName(ctx context.Context, locationID uuid.UUID) string {
+	var name string
+	err := s.db.QueryRow(ctx, `SELECT name FROM locations WHERE id = $1`, locationID).Scan(&name)
+	if err != nil {
+		return ""
+	}
+	return name
+}
+
 // GetCompaniesToSync fetches all companies with iiko credentials configured.
 func (s *Service) GetCompaniesToSync(ctx context.Context) ([]CompanySync, error) {
 	rows, err := s.db.Query(ctx,
@@ -231,20 +242,28 @@ func (s *Service) SyncRevenue(ctx context.Context, client *iiko.Client, companyI
 
 	// Include DishName in GroupByRowFields to get per-dish rows.
 	// iiko returns DishSumInt per-dish; we SUM them per order in Go.
+	filters := map[string]interface{}{
+		"OpenDate.Typed": map[string]interface{}{
+			"filterType": "DateRange",
+			"periodType": "CUSTOM",
+			"from":       dateFrom,
+			"to":         dateTo,
+			"includeLow": true, "includeHigh": true,
+		},
+	}
+	// Filter by department name if location has one (multi-location setups)
+	if deptName := s.getDeptName(ctx, locationID); deptName != "" {
+		filters["Department"] = map[string]interface{}{
+			"filterType": "IncludeValues",
+			"values":     []string{deptName},
+		}
+	}
 	report, err := client.GetOLAPReport(ctx, iiko.OLAPReportRequest{
 		ReportType:       "SALES",
 		GroupByRowFields: []string{"UniqOrderId.Id", "OrderNum", "OrderServiceType", "WaiterName", "OpenDate.Typed", "DishName"},
 		GroupByColFields: []string{},
 		AggregateFields:  []string{"DishDiscountSumInt", "DishSumInt", "DishAmountInt"},
-		Filters: map[string]interface{}{
-			"OpenDate.Typed": map[string]interface{}{
-				"filterType": "DateRange",
-				"periodType": "CUSTOM",
-				"from":       dateFrom,
-				"to":         dateTo,
-				"includeLow": true, "includeHigh": true,
-			},
-		},
+		Filters:          filters,
 	})
 	if err != nil {
 		s.failSyncLog(ctx, logID, start, err)
@@ -324,20 +343,27 @@ func (s *Service) SyncProductSales(ctx context.Context, client *iiko.Client, com
 	dateTo := time.Now().Format("2006-01-02")
 	dateFrom := time.Date(2026, 1, 1, 0, 0, 0, 0, time.Local).Format("2006-01-02")
 
+	psFilters := map[string]interface{}{
+		"OpenDate.Typed": map[string]interface{}{
+			"filterType": "DateRange",
+			"periodType": "CUSTOM",
+			"from":       dateFrom,
+			"to":         dateTo,
+			"includeLow": true, "includeHigh": true,
+		},
+	}
+	if deptName := s.getDeptName(ctx, locationID); deptName != "" {
+		psFilters["Department"] = map[string]interface{}{
+			"filterType": "IncludeValues",
+			"values":     []string{deptName},
+		}
+	}
 	report, err := client.GetOLAPReport(ctx, iiko.OLAPReportRequest{
 		ReportType:       "SALES",
 		GroupByRowFields: []string{"DishName", "DishGroup", "DishCategory", "UniqOrderId.Id", "OpenDate.Typed"},
 		GroupByColFields: []string{},
 		AggregateFields:  []string{"DishAmountInt", "DishSumInt", "DishDiscountSumInt", "ProductCostBase.ProductCost"},
-		Filters: map[string]interface{}{
-			"OpenDate.Typed": map[string]interface{}{
-				"filterType": "DateRange",
-				"periodType": "CUSTOM",
-				"from":       dateFrom,
-				"to":         dateTo,
-				"includeLow": true, "includeHigh": true,
-			},
-		},
+		Filters:          psFilters,
 	})
 	if err != nil {
 		s.failSyncLog(ctx, logID, start, err)

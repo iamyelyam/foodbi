@@ -13,6 +13,7 @@ interface CompanySettings {
 interface UiPrefs {
   showUploadInvoicesBanner: boolean
 }
+const ACTIVE_LOC_KEY = 'foodbi-active-location'
 const UI_PREFS_KEY = 'foodbi-ui-prefs-v1'
 const DEFAULT_UI_PREFS: UiPrefs = { showUploadInvoicesBanner: true }
 function readUiPrefs(): UiPrefs {
@@ -60,18 +61,21 @@ export const useAppStore = create<AppState>((set) => ({
   dateFrom: thirtyDaysAgo(),
   dateTo: todayStr(),
   setDateRange: (from, to) => set({ dateFrom: from, dateTo: to }),
-  selectedLocationIds: [],
-  activeLocationId: null,
-  setSelectedLocations: (ids) =>
-    set({
-      selectedLocationIds: ids,
-      activeLocationId: ids.length === 1 ? ids[0] : null,
-    }),
-  setActiveLocation: (id) =>
-    set({
-      activeLocationId: id,
-      selectedLocationIds: id ? [id] : [],
-    }),
+  selectedLocationIds: (() => {
+    try { const v = localStorage.getItem(ACTIVE_LOC_KEY); return v ? [v] : [] } catch { return [] }
+  })(),
+  activeLocationId: (() => {
+    try { return localStorage.getItem(ACTIVE_LOC_KEY) } catch { return null }
+  })(),
+  setSelectedLocations: (ids) => {
+    const active = ids.length === 1 ? ids[0] : null
+    try { active ? localStorage.setItem(ACTIVE_LOC_KEY, active) : localStorage.removeItem(ACTIVE_LOC_KEY) } catch {}
+    set({ selectedLocationIds: ids, activeLocationId: active })
+  },
+  setActiveLocation: (id) => {
+    try { id ? localStorage.setItem(ACTIVE_LOC_KEY, id) : localStorage.removeItem(ACTIVE_LOC_KEY) } catch {}
+    set({ activeLocationId: id, selectedLocationIds: id ? [id] : [] })
+  },
   companySettings: {
     country: 'KZ',
     currency: 'KZT',

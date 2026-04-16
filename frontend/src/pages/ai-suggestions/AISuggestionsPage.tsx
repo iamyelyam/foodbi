@@ -1,16 +1,17 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { CardSkeleton } from '@/components/ui/skeleton'
 import { Header } from '@/components/layout/Header'
 import { Tabbar } from '@/components/layout/Tabbar'
 import { BottomSheet } from '@/components/layout/BottomSheet'
+import { LocationSwitcher } from '@/components/layout/LocationSwitcher'
 import { useUnreadNotificationCount } from '@/hooks/useApi'
-import { Info, Sparkles, CheckSquare } from 'lucide-react'
+import { Info, Sparkles, Loader2, MapPin, ChevronDown } from 'lucide-react'
 import { useCurrency } from '@/stores/app'
-import { cn } from '@/lib/utils'
 import api from '@/lib/api'
 import { useT } from '@/i18n'
+import { useAppStore } from '@/stores/app'
 
 interface Suggestion {
   id: string
@@ -46,17 +47,39 @@ export function AISuggestionsPage() {
   const t = useT()
   const cs = useCurrency()
   const [showInfo, setShowInfo] = useState(false)
-  const [showTasks, setShowTasks] = useState(false)
+  const [showLocations, setShowLocations] = useState(false)
   const { data: unreadCount = 0 } = useUnreadNotificationCount()
 
-  const { data, isLoading } = useQuery<SuggestionsResponse>({
-    queryKey: ['ai-suggestions'],
-    queryFn: () => api.get('/ai/suggestions').then((r) => r.data),
+  const selectedLocationIds = useAppStore((s) => s.selectedLocationIds)
+  const locationId = useAppStore((s) => s.activeLocationId)
+
+  const { data: locations = [] } = useQuery<any[]>({
+    queryKey: ['locations'],
+    queryFn: () => api.get('/locations').then((r) => r.data),
   })
 
-  const { data: tasks = [] } = useQuery({
-    queryKey: ['ai-tasks'],
-    queryFn: () => api.get('/ai/tasks').then((r) => r.data),
+  const locationName = (() => {
+    if (locations.length === 0) return t('common.loading')
+    if (selectedLocationIds.length === 0 || selectedLocationIds.length === locations.length)
+      return t('location.allLocations')
+    if (selectedLocationIds.length === 1) {
+      const sel = locations.find((l: any) => l.id === selectedLocationIds[0])
+      return sel?.name || t('common.loading')
+    }
+    return t('location.multipleLocations', { count: selectedLocationIds.length })
+  })()
+
+  const { data, isLoading } = useQuery<SuggestionsResponse>({
+    queryKey: ['ai-suggestions', selectedLocationIds],
+    queryFn: () => api.get('/ai/suggestions', {
+      params: selectedLocationIds.length > 0 ? { location_ids: selectedLocationIds.join(',') } : {},
+    }).then((r) => r.data),
+  })
+
+  const generateMutation = useMutation({
+    mutationFn: () =>
+      api.post('/ai/suggestions/generate', null, { params: { location_id: selectedLocationIds.length === 1 ? selectedLocationIds[0] : locationId } }).then((r) => r.data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['ai-suggestions', selectedLocationIds] }),
   })
 
   const summary = data?.summary
@@ -67,6 +90,18 @@ export function AISuggestionsPage() {
       <Header title="AI Suggestions" showBack showNotification badgeCount={unreadCount} />
 
       <main className="flex-1 px-4 pt-3 pb-24 space-y-3">
+        {/* Location picker */}
+        {locations.length > 1 && (
+          <button
+            onClick={() => setShowLocations(true)}
+            className="flex items-center gap-1.5 px-1"
+          >
+            <MapPin className="h-4 w-4 text-primary" />
+            <span className="text-sm font-medium text-dark">{locationName}</span>
+            <ChevronDown className="h-3.5 w-3.5 text-gray" />
+          </button>
+        )}
+
         {/* Date + summary card */}
         <div className="bg-white rounded-[16px] p-4 space-y-3 shadow-sm">
           <div className="flex justify-end -mb-1">
@@ -95,16 +130,6 @@ export function AISuggestionsPage() {
           </div>
         </div>
 
-        {/* Tasks pill */}
-        {tasks.length > 0 && (
-          <button
-            onClick={() => setShowTasks(true)}
-            className="w-full flex items-center justify-center gap-2 text-sm font-medium text-primary py-2"
-          >
-            <CheckSquare className="h-4 w-4" /> Tasks ({tasks.length})
-          </button>
-        )}
-
         {/* Suggestions */}
         {isLoading ? (
           <>
@@ -114,7 +139,26 @@ export function AISuggestionsPage() {
         ) : suggestions.length === 0 ? (
           <div className="text-center py-12">
             <Sparkles className="h-12 w-12 text-gray-light mx-auto mb-3" />
-            <p className="text-sm text-gray">No suggestions yet. Sync more data with iiko.</p>
+            <p className="text-sm text-gray">{t('ai.noSuggestions')}</p>
+            {locationId && (
+              <button
+                onClick={() => generateMutation.mutate()}
+                disabled={generateMutation.isPending}
+                className="mt-4 bg-primary text-dark font-semibold py-3 px-6 rounded-full active:opacity-80 disabled:opacity-60 inline-flex items-center gap-2"
+              >
+                {generateMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {t('ai.generating')}
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4" />
+                    {t('ai.generateButton')}
+                  </>
+                )}
+              </button>
+            )}
           </div>
         ) : (
           suggestions.map((s) => (
@@ -142,29 +186,7 @@ export function AISuggestionsPage() {
         </div>
       </BottomSheet>
 
-      {/* Tasks list */}
-      <BottomSheet isOpen={showTasks} onClose={() => setShowTasks(false)} title="Tasks">
-        <div className="space-y-2">
-          {tasks.map((t: any) => (
-            <div key={t.id} className="bg-bg rounded-[12px] p-3">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-dark">{t.title}</p>
-                <span className={cn('text-xs px-2 py-0.5 rounded-full',
-                  t.status === 'done' ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'
-                )}>{t.status}</span>
-              </div>
-              <p className="text-xs text-gray mt-1">{new Date(t.created_at).toLocaleDateString()}</p>
-            </div>
-          ))}
-          {tasks.length === 0 && <p className="text-sm text-gray text-center py-4">No tasks yet</p>}
-        </div>
-        <button
-          onClick={() => { setShowTasks(false); queryClient.invalidateQueries({ queryKey: ['ai-tasks'] }) }}
-          className="w-full text-center text-primary font-semibold py-2 mt-2"
-        >
-          Close
-        </button>
-      </BottomSheet>
+      <LocationSwitcher isOpen={showLocations} onClose={() => setShowLocations(false)} />
     </div>
   )
 }

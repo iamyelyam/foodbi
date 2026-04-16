@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useUnreadNotificationCount } from '@/hooks/useApi'
 import { Snackbar } from '@/components/ui/snackbar'
-import { MapPin, Plus, RefreshCw, Check } from 'lucide-react'
+import { MapPin, Plus, RefreshCw, Check, Pencil, Trash2, MoreVertical } from 'lucide-react'
 import { useAppStore } from '@/stores/app'
 import api from '@/lib/api'
 import { useT, useI18nStore } from '@/i18n'
@@ -41,6 +41,20 @@ export function LocationsPage() {
   const [address, setAddress] = useState('')
   const [iikoOrgId, setIikoOrgId] = useState('')
 
+  // Edit state
+  const [editingLoc, setEditingLoc] = useState<Location | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editAddress, setEditAddress] = useState('')
+  const [editIikoUrl, setEditIikoUrl] = useState('')
+  const [editIikoLogin, setEditIikoLogin] = useState('')
+  const [editIikoPassword, setEditIikoPassword] = useState('')
+
+  // Delete state
+  const [deletingLoc, setDeletingLoc] = useState<Location | null>(null)
+
+  // Context menu state
+  const [menuLocId, setMenuLocId] = useState<string | null>(null)
+
   const { data: locations = [], isLoading } = useQuery<Location[]>({
     queryKey: ['locations'],
     queryFn: () => api.get('/locations').then(r => r.data),
@@ -64,6 +78,37 @@ export function LocationsPage() {
     },
   })
 
+  const updateMutation = useMutation({
+    mutationFn: async (data: { id: string; name: string; address: string; iikoUrl: string; iikoLogin: string; iikoPassword: string }) => {
+      await api.put(`/locations/${data.id}`, { name: data.name, address: data.address })
+      // Only update iiko config if all three fields are filled (password required for security)
+      if (data.iikoUrl && data.iikoLogin && data.iikoPassword) {
+        await api.put('/locations/iiko-config', {
+          iiko_server_url: data.iikoUrl,
+          iiko_login: data.iikoLogin,
+          iiko_password: data.iikoPassword,
+        })
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['locations'] })
+      setEditingLoc(null)
+    },
+  })
+
+  const [deleteError, setDeleteError] = useState('')
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/locations/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['locations'] })
+      setDeletingLoc(null)
+      setDeleteError('')
+    },
+    onError: (err: any) => {
+      setDeleteError(err.response?.data?.error || 'Failed to delete')
+    },
+  })
+
   const syncMutation = useMutation({
     mutationFn: (locId: string) => api.post(`/locations/${locId}/sync`),
     onSuccess: () => {
@@ -76,6 +121,26 @@ export function LocationsPage() {
     const entries = syncStatus.filter(s => s.location_id === locationId && s.status === 'success')
     if (entries.length === 0) return null
     return entries.sort((a, b) => b.started_at.localeCompare(a.started_at))[0]
+  }
+
+  const openEdit = async (loc: Location) => {
+    setEditName(loc.name)
+    setEditAddress(loc.address || '')
+    setEditIikoUrl('')
+    setEditIikoLogin('')
+    setEditIikoPassword('')
+    setEditingLoc(loc)
+    setMenuLocId(null)
+    try {
+      const { data } = await api.get('/locations/iiko-config')
+      setEditIikoUrl(data.iiko_server_url || '')
+      setEditIikoLogin(data.iiko_login || '')
+    } catch { /* ignore */ }
+  }
+
+  const openDelete = (loc: Location) => {
+    setDeletingLoc(loc)
+    setMenuLocId(null)
   }
 
   return (
@@ -107,50 +172,83 @@ export function LocationsPage() {
           {locations.map((loc) => {
             const isActive = activeLocationId === loc.id
             const lastSync = getLastSync(loc.id)
+            const showMenu = menuLocId === loc.id
 
             return (
-              <button
-                key={loc.id}
-                onClick={() => setActiveLocation(loc.id)}
-                className={`bg-white rounded-[16px] p-4 text-left transition-all ${
-                  isActive ? 'ring-2 ring-primary' : ''
-                }`}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-start gap-3">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                      isActive ? 'bg-primary' : 'bg-primary-lighter'
-                    }`}>
-                      <MapPin className={`h-5 w-5 ${isActive ? 'text-white' : 'text-primary'}`} />
+              <div key={loc.id} className="relative">
+                <button
+                  onClick={() => setActiveLocation(loc.id)}
+                  className={`w-full bg-white rounded-[16px] p-4 text-left transition-all ${
+                    isActive ? 'ring-2 ring-primary' : ''
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-start gap-3">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                        isActive ? 'bg-primary' : 'bg-primary-lighter'
+                      }`}>
+                        <MapPin className={`h-5 w-5 ${isActive ? 'text-white' : 'text-primary'}`} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-dark">{loc.name}</p>
+                        {loc.address && (
+                          <p className="text-xs text-gray mt-0.5">{loc.address}</p>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-sm font-semibold text-dark">{loc.name}</p>
-                      {loc.address && (
-                        <p className="text-xs text-gray mt-0.5">{loc.address}</p>
-                      )}
+                    <div className="flex items-center gap-1">
+                      {isActive && <Check className="h-5 w-5 text-primary" />}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setMenuLocId(showMenu ? null : loc.id) }}
+                        className="w-8 h-8 flex items-center justify-center rounded-full active:bg-bg"
+                      >
+                        <MoreVertical className="h-4 w-4 text-gray" />
+                      </button>
                     </div>
                   </div>
-                  {isActive && <Check className="h-5 w-5 text-primary" />}
-                </div>
 
-                <div className="mt-3 flex items-center justify-between">
-                  {lastSync ? (
-                    <div className="flex items-center gap-1.5 text-xs text-gray">
-                      <RefreshCw className="h-3 w-3" />
-                      <span>{t('locations.lastSync', { time: new Date(lastSync.started_at).toLocaleTimeString(locale) })}</span>
+                  <div className="mt-3 flex items-center justify-between">
+                    {lastSync ? (
+                      <div className="flex items-center gap-1.5 text-xs text-gray">
+                        <RefreshCw className="h-3 w-3" />
+                        <span>{t('locations.lastSync', { time: new Date(lastSync.started_at).toLocaleTimeString(locale) })}</span>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-gray">{t('locations.notSyncedYet')}</span>
+                    )}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); syncMutation.mutate(loc.id) }}
+                      disabled={syncMutation.isPending}
+                      className="text-xs font-medium text-primary bg-primary-lighter px-3 py-1 rounded-full"
+                    >
+                      {syncMutation.isPending ? t('locations.syncing') : t('locations.syncNow')}
+                    </button>
+                  </div>
+                </button>
+
+                {/* Context menu dropdown */}
+                {showMenu && (
+                  <>
+                    <div className="fixed inset-0 z-30" onClick={() => setMenuLocId(null)} />
+                    <div className="absolute right-4 top-12 z-40 bg-white rounded-[12px] shadow-lg border border-bg-alt py-1 min-w-[180px]">
+                      <button
+                        onClick={() => openEdit(loc)}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-dark active:bg-bg"
+                      >
+                        <Pencil className="h-4 w-4 text-gray" />
+                        {t('locations.editLocation')}
+                      </button>
+                      <button
+                        onClick={() => openDelete(loc)}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-danger active:bg-bg"
+                      >
+                        <Trash2 className="h-4 w-4 text-danger" />
+                        {t('locations.deleteLocation')}
+                      </button>
                     </div>
-                  ) : (
-                    <span className="text-xs text-gray">{t('locations.notSyncedYet')}</span>
-                  )}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); syncMutation.mutate(loc.id) }}
-                    disabled={syncMutation.isPending}
-                    className="text-xs font-medium text-primary bg-primary-lighter px-3 py-1 rounded-full"
-                  >
-                    {syncMutation.isPending ? t('locations.syncing') : t('locations.syncNow')}
-                  </button>
-                </div>
-              </button>
+                  </>
+                )}
+              </div>
             )
           })}
 
@@ -169,6 +267,7 @@ export function LocationsPage() {
 
       <Tabbar />
 
+      {/* Add location sheet */}
       <BottomSheet isOpen={showAdd} onClose={() => setShowAdd(false)} title={t('locations.addLocation')}>
         <div className="flex flex-col gap-4">
           <Input
@@ -196,6 +295,89 @@ export function LocationsPage() {
           >
             {addMutation.isPending ? t('common.adding') : t('locations.addLocation')}
           </Button>
+        </div>
+      </BottomSheet>
+
+      {/* Edit location sheet */}
+      <BottomSheet isOpen={!!editingLoc} onClose={() => setEditingLoc(null)} title={t('locations.editLocation')}>
+        <div className="flex flex-col gap-4">
+          <Input
+            label={t('locations.restaurantName')}
+            placeholder={t('locations.streetExample')}
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+          />
+          <Input
+            label={t('locations.addressLabel')}
+            placeholder={t('locations.streetAddressExample')}
+            value={editAddress}
+            onChange={(e) => setEditAddress(e.target.value)}
+          />
+
+          <div className="border-t border-bg-alt pt-4 mt-1">
+            <p className="text-xs font-semibold text-gray mb-3">iiko Server</p>
+            <div className="flex flex-col gap-3">
+              <Input
+                label="Server URL"
+                placeholder="https://..."
+                value={editIikoUrl}
+                onChange={(e) => setEditIikoUrl(e.target.value)}
+              />
+              <Input
+                label={t('locations.iikoLogin')}
+                placeholder="Login"
+                value={editIikoLogin}
+                onChange={(e) => setEditIikoLogin(e.target.value)}
+              />
+              <Input
+                label={t('locations.iikoPassword')}
+                placeholder={t('locations.iikoPasswordPh')}
+                type="password"
+                value={editIikoPassword}
+                onChange={(e) => setEditIikoPassword(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <Button
+            fullWidth
+            onClick={() => editingLoc && updateMutation.mutate({
+              id: editingLoc.id,
+              name: editName,
+              address: editAddress,
+              iikoUrl: editIikoUrl,
+              iikoLogin: editIikoLogin,
+              iikoPassword: editIikoPassword,
+            })}
+            disabled={!editName || updateMutation.isPending}
+          >
+            {updateMutation.isPending ? t('common.saving') : t('common.save')}
+          </Button>
+        </div>
+      </BottomSheet>
+
+      {/* Delete confirmation sheet */}
+      <BottomSheet isOpen={!!deletingLoc} onClose={() => { setDeletingLoc(null); setDeleteError('') }} title={t('locations.deleteLocation')}>
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-gray text-center">
+            {t('locations.deleteConfirm', { name: deletingLoc?.name || '' })}
+          </p>
+          {deleteError && (
+            <p className="text-sm text-danger text-center">{deleteError}</p>
+          )}
+          <div className="flex gap-3">
+            <Button variant="secondary" fullWidth onClick={() => { setDeletingLoc(null); setDeleteError('') }}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="danger"
+              fullWidth
+              onClick={() => deletingLoc && deleteMutation.mutate(deletingLoc.id)}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? t('locations.deleting') : t('common.delete')}
+            </Button>
+          </div>
         </div>
       </BottomSheet>
 

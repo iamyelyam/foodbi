@@ -3,7 +3,6 @@ package stock
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -68,15 +67,13 @@ LEFT JOIN stock_overrides o  ON o.company_id  = s.company_id AND o.iiko_product_
 
 func (h *Handler) CurrentStock(w http.ResponseWriter, r *http.Request) {
 	companyID := middleware.GetCompanyID(r.Context())
-	locationID := r.URL.Query().Get("location_id")
+	locIDs := middleware.ParseLocationFilter(r)
 
 	query := stockSelect + ` WHERE s.company_id = $1`
 	args := []interface{}{companyID}
 
-	if locationID != "" {
-		query += ` AND s.location_id = $2`
-		args = append(args, locationID)
-	}
+	locFilter, args := middleware.AddLocationFilter(args, locIDs)
+	query += locFilter
 	query += ` ORDER BY s.iiko_product_id, s.snapshot_at DESC`
 
 	rows, err := h.db.Query(r.Context(), query, args...)
@@ -109,17 +106,14 @@ func (h *Handler) CurrentStock(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) LowStock(w http.ResponseWriter, r *http.Request) {
 	companyID := middleware.GetCompanyID(r.Context())
-	locationID := r.URL.Query().Get("location_id")
+	locIDs := middleware.ParseLocationFilter(r)
 	threshold := 5.0
 
 	query := stockSelect + ` WHERE s.company_id = $1 AND s.amount <= $2`
 	args := []interface{}{companyID, threshold}
-	argIdx := 3
 
-	if locationID != "" {
-		query += ` AND s.location_id = $` + strconv.Itoa(argIdx)
-		args = append(args, locationID)
-	}
+	locFilter, args := middleware.AddLocationFilter(args, locIDs)
+	query += locFilter
 	query += ` ORDER BY s.iiko_product_id, s.snapshot_at DESC`
 
 	rows, err := h.db.Query(r.Context(), query, args...)

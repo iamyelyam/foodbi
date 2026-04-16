@@ -17,6 +17,7 @@ import (
 	"github.com/foodbi/backend/internal/files"
 	"github.com/foodbi/backend/internal/locations"
 	"github.com/foodbi/backend/internal/middleware"
+	gosync "github.com/foodbi/backend/internal/sync"
 	"github.com/foodbi/backend/internal/notifications"
 	"github.com/foodbi/backend/internal/payments"
 	"github.com/foodbi/backend/internal/profiles"
@@ -70,7 +71,8 @@ func main() {
 
 	authService := auth.NewService(db)
 	authHandler := auth.NewHandler(authService)
-	locHandler := locations.NewHandler(db)
+	syncService := gosync.NewService(db)
+	locHandler := locations.NewHandler(db, syncService)
 	dashHandler := dashboard.NewHandler(db)
 	revHandler := revenue.NewHandler(db)
 	purchHandler := purchases.NewHandler(db)
@@ -81,7 +83,7 @@ func main() {
 	empHandler := employees.NewHandler(db)
 	profHandler := profiles.NewHandler(db)
 	notifHandler := notifications.NewHandler(db)
-	aiHandler := ai.NewHandler(db)
+	aiHandler := ai.NewHandler(db, os.Getenv("OPENAI_API_KEY"))
 	fileHandler := files.NewHandler(db)
 	paymentHandler := payments.NewHandler(db, tgBot)
 

@@ -215,7 +215,7 @@
     "syncing": "Sincronizando...",
     "syncQueued": "Sincronización iniciada",
     "notSynced": "No sincronizado",
-    "lastSync": "Última sinc.",
+    "lastSync": "Sinc. {time}",
     "allLocations": "Todas las ubicaciones",
     "restaurantName": "Nombre del restaurante",
     "address": "Dirección",
@@ -233,7 +233,14 @@
     "iikoOrgIdPh": "Desde ajustes de iiko Cloud",
     "posSystemLabel": "Sistema POS",
     "addFailed": "No se pudo agregar la ubicación. Inténtalo de nuevo.",
-    "notSyncedYet": "Aún no sincronizado"
+    "notSyncedYet": "Aún no sincronizado",
+    "editLocation": "Editar ubicación",
+    "deleteLocation": "Eliminar ubicación",
+    "deleteConfirm": "¿Estás seguro de que quieres eliminar «{name}»? Esta acción no se puede deshacer.",
+    "deleting": "Eliminando...",
+    "iikoLogin": "Usuario",
+    "iikoPassword": "Contraseña",
+    "iikoPasswordPh": "Dejar vacío para mantener actual"
   },
   "notifications": {
     "title": "Notificaciones",
@@ -281,6 +288,8 @@
     "howToFix": "¿Cómo solucionarlo?",
     "createTaskBtn": "Crear tarea",
     "noSuggestions": "Aún no hay sugerencias. Sincroniza más datos con iiko.",
+    "generateButton": "Generar recomendaciones con IA",
+    "generating": "Analizando datos…",
     "infoTotalLoss": "Suma estimada del dinero que se pierde hoy: errores de stock, márgenes bajos, ítems en riesgo.",
     "infoTotalGain": "Ganancia potencial si actúas sobre cada sugerencia (negociación de precios, promociones, etc.).",
     "infoCaveat": "Los números son estimaciones aproximadas — indican dónde mirar primero, no un P&L exacto.",
@@ -316,6 +325,11 @@
       "collectMore": {
         "title": "Recopila más datos",
         "description": "Las sugerencias de IA mejoran con más datos. Sincroniza con iiko al menos 7 días para obtener recomendaciones útiles."
+      },
+      "aiGenerated": {
+        "title": "{text}",
+        "description": "{text}",
+        "solution": "{text}"
       }
     }
   },

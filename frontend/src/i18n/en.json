@@ -215,7 +215,7 @@
     "syncing": "Syncing...",
     "syncQueued": "Sync queued successfully",
     "notSynced": "Not synced yet",
-    "lastSync": "Last sync",
+    "lastSync": "Synced {time}",
     "allLocations": "All locations",
     "restaurantName": "Restaurant name",
     "address": "Address",
@@ -233,7 +233,14 @@
     "iikoOrgIdPh": "From iiko Cloud settings",
     "posSystemLabel": "POS System",
     "addFailed": "Failed to add location. Please try again.",
-    "notSyncedYet": "Not synced yet"
+    "notSyncedYet": "Not synced yet",
+    "editLocation": "Edit Location",
+    "deleteLocation": "Delete Location",
+    "deleteConfirm": "Are you sure you want to delete \"{name}\"? This action cannot be undone.",
+    "deleting": "Deleting...",
+    "iikoLogin": "Login",
+    "iikoPassword": "Password",
+    "iikoPasswordPh": "Leave empty to keep current"
   },
   "notifications": {
     "title": "Notifications",
@@ -281,6 +288,8 @@
     "howToFix": "How to fix it?",
     "createTaskBtn": "Create task",
     "noSuggestions": "No suggestions yet. Sync more data with iiko.",
+    "generateButton": "Generate AI recommendations",
+    "generating": "Analyzing your data…",
     "infoTotalLoss": "Sum of estimated money slipping away today: data errors on stock, low margins, items at risk of write-off.",
     "infoTotalGain": "Sum of estimated upside if you act on every suggestion (price negotiations, promoting top sellers, etc.).",
     "infoCaveat": "Numbers are rough estimates — they tell you where to look first, not exact P&L.",
@@ -316,6 +325,11 @@
       "collectMore": {
         "title": "Collect more data",
         "description": "AI suggestions improve with more data. Keep syncing with iiko for at least 7 days to get meaningful recommendations."
+      },
+      "aiGenerated": {
+        "title": "{text}",
+        "description": "{text}",
+        "solution": "{text}"
       }
     }
   },

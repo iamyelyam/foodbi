@@ -49,7 +49,7 @@ type DashboardSummary struct {
 
 func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 	companyID := middleware.GetCompanyID(r.Context())
-	locationID := r.URL.Query().Get("location_id")
+	locIDs := middleware.ParseLocationFilter(r)
 	dateFromParam := r.URL.Query().Get("date_from")
 	dateToParam := r.URL.Query().Get("date_to")
 
@@ -76,13 +76,8 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 	var summary DashboardSummary
 
 	// Revenue for selected range (or today)
-	locFilter := ""
 	args := []interface{}{companyID, rangeStart, rangeEnd}
-	if locationID != "" {
-		locFilter = " AND location_id = $4"
-		args = append(args, locationID)
-	}
-
+	locFilter, args := middleware.AddLocationFilter(args, locIDs)
 	h.db.QueryRow(r.Context(),
 		`SELECT COALESCE(SUM(revenue), 0), COALESCE(COUNT(*), 0)
 		 FROM revenue_facts WHERE company_id = $1 AND order_date >= $2 AND order_date < $3`+locFilter, args...).
@@ -90,11 +85,7 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 
 	// Purchases for selected range
 	purchArgs := []interface{}{companyID, rangeStart, rangeEnd}
-	purchLocFilter := ""
-	if locationID != "" {
-		purchLocFilter = " AND location_id = $4"
-		purchArgs = append(purchArgs, locationID)
-	}
+	purchLocFilter, purchArgs := middleware.AddLocationFilter(purchArgs, locIDs)
 	h.db.QueryRow(r.Context(),
 		`SELECT COALESCE(SUM(total_sum), 0), COALESCE(COUNT(*), 0)
 		 FROM purchase_facts WHERE company_id = $1 AND incoming_date >= $2 AND incoming_date < $3`+purchLocFilter, purchArgs...).
@@ -102,11 +93,7 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 
 	// This week purchases
 	weekPurchArgs := []interface{}{companyID, weekStart}
-	weekPurchLocFilter := ""
-	if locationID != "" {
-		weekPurchLocFilter = " AND location_id = $3"
-		weekPurchArgs = append(weekPurchArgs, locationID)
-	}
+	weekPurchLocFilter, weekPurchArgs := middleware.AddLocationFilter(weekPurchArgs, locIDs)
 	h.db.QueryRow(r.Context(),
 		`SELECT COALESCE(SUM(total_sum), 0), COALESCE(COUNT(*), 0)
 		 FROM purchase_facts WHERE company_id = $1 AND incoming_date >= $2`+weekPurchLocFilter, weekPurchArgs...).
@@ -114,11 +101,7 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 
 	// Top suppliers
 	topArgs := []interface{}{companyID, weekStart}
-	topLocFilter := ""
-	if locationID != "" {
-		topLocFilter = " AND location_id = $3"
-		topArgs = append(topArgs, locationID)
-	}
+	topLocFilter, topArgs := middleware.AddLocationFilter(topArgs, locIDs)
 	supRows, supErr := h.db.Query(r.Context(),
 		`SELECT COALESCE(supplier_name, 'Unknown'), SUM(total_sum)
 		 FROM purchase_facts WHERE company_id = $1 AND incoming_date >= $2`+topLocFilter+`
@@ -137,11 +120,7 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 
 	// This week revenue
 	weekArgs := []interface{}{companyID, weekStart}
-	weekLocFilter := ""
-	if locationID != "" {
-		weekLocFilter = " AND location_id = $3"
-		weekArgs = append(weekArgs, locationID)
-	}
+	weekLocFilter, weekArgs := middleware.AddLocationFilter(weekArgs, locIDs)
 	h.db.QueryRow(r.Context(),
 		`SELECT COALESCE(SUM(revenue), 0), COALESCE(COUNT(*), 0)
 		 FROM revenue_facts WHERE company_id = $1 AND order_date >= $2`+weekLocFilter, weekArgs...).
@@ -149,11 +128,7 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 
 	// Previous week revenue (for comparison)
 	prevArgs := []interface{}{companyID, prevWeekStart, weekStart}
-	prevLocFilter := ""
-	if locationID != "" {
-		prevLocFilter = " AND location_id = $4"
-		prevArgs = append(prevArgs, locationID)
-	}
+	prevLocFilter, prevArgs := middleware.AddLocationFilter(prevArgs, locIDs)
 	h.db.QueryRow(r.Context(),
 		`SELECT COALESCE(SUM(revenue), 0)
 		 FROM revenue_facts WHERE company_id = $1 AND order_date >= $2 AND order_date < $3`+prevLocFilter, prevArgs...).
@@ -163,11 +138,7 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 	// Uses product_sales_facts (per-dish cost_price from iiko) — represents true COGS,
 	// not purchase invoices (which arrive irregularly).
 	cogsArgs := []interface{}{companyID, rangeStart, rangeEnd}
-	cogsLocFilter := ""
-	if locationID != "" {
-		cogsLocFilter = " AND location_id = $4"
-		cogsArgs = append(cogsArgs, locationID)
-	}
+	cogsLocFilter, cogsArgs := middleware.AddLocationFilter(cogsArgs, locIDs)
 	var periodCOGS float64
 	h.db.QueryRow(r.Context(),
 		`SELECT COALESCE(SUM(cost_price), 0)
@@ -178,11 +149,7 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 
 	// Week profit = week revenue - week COGS
 	weekCogsArgs := []interface{}{companyID, weekStart}
-	weekCogsLocFilter := ""
-	if locationID != "" {
-		weekCogsLocFilter = " AND location_id = $3"
-		weekCogsArgs = append(weekCogsArgs, locationID)
-	}
+	weekCogsLocFilter, weekCogsArgs := middleware.AddLocationFilter(weekCogsArgs, locIDs)
 	var weekCOGS float64
 	h.db.QueryRow(r.Context(),
 		`SELECT COALESCE(SUM(cost_price), 0)
@@ -207,7 +174,7 @@ type TrendPoint struct {
 
 func (h *Handler) RevenueTrend(w http.ResponseWriter, r *http.Request) {
 	companyID := middleware.GetCompanyID(r.Context())
-	locationID := r.URL.Query().Get("location_id")
+	locIDs := middleware.ParseLocationFilter(r)
 	days := 7
 	if d := r.URL.Query().Get("days"); d != "" {
 		if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 && parsed <= 365 {
@@ -217,15 +184,10 @@ func (h *Handler) RevenueTrend(w http.ResponseWriter, r *http.Request) {
 
 	dateFrom := time.Now().AddDate(0, 0, -days).Truncate(24 * time.Hour)
 
-	query := `SELECT DATE(order_date) as day, COALESCE(SUM(revenue), 0), COALESCE(COUNT(*), 0), COALESCE(SUM(item_count), 0)
-		FROM revenue_facts WHERE company_id = $1 AND order_date >= $2`
 	args := []interface{}{companyID, dateFrom}
-
-	if locationID != "" {
-		query += " AND location_id = $3"
-		args = append(args, locationID)
-	}
-	query += " GROUP BY DATE(order_date) ORDER BY day"
+	trendLocFilter, args := middleware.AddLocationFilter(args, locIDs)
+	query := `SELECT DATE(order_date) as day, COALESCE(SUM(revenue), 0), COALESCE(COUNT(*), 0), COALESCE(SUM(item_count), 0)
+		FROM revenue_facts WHERE company_id = $1 AND order_date >= $2` + trendLocFilter + ` GROUP BY DATE(order_date) ORDER BY day`
 
 	rows, err := h.db.Query(r.Context(), query, args...)
 	if err != nil {

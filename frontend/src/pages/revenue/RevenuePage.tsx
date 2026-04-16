@@ -63,10 +63,12 @@ export function RevenuePage() {
   const [metricDays, setMetricDays] = useState<number>(30)
   const [productDays, setProductDays] = useState<number>(30)
 
+  const selectedLocationIds = useAppStore((s) => s.selectedLocationIds)
+  const locationIdsParam = selectedLocationIds.length > 0 ? selectedLocationIds.join(',') : undefined
   const { data: metricTrend = [] } = useQuery<any[]>({
-    queryKey: ['metric-trend', metricDays],
+    queryKey: ['metric-trend', metricDays, selectedLocationIds],
     queryFn: () =>
-      api.get('/dashboard/revenue-trend', { params: { days: metricDays } }).then((r) => r.data),
+      api.get('/dashboard/revenue-trend', { params: { location_ids: locationIdsParam, days: metricDays } }).then((r) => r.data),
     enabled: !!selectedMetric,
   })
 

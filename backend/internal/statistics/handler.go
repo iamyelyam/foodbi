@@ -36,7 +36,7 @@ type StatPoint struct {
 
 func (h *Handler) RevenueStats(w http.ResponseWriter, r *http.Request) {
 	companyID := middleware.GetCompanyID(r.Context())
-	locationID := r.URL.Query().Get("location_id")
+	locIDs := middleware.ParseLocationFilter(r)
 	dateFrom := r.URL.Query().Get("date_from")
 	dateTo := r.URL.Query().Get("date_to")
 
@@ -51,10 +51,8 @@ func (h *Handler) RevenueStats(w http.ResponseWriter, r *http.Request) {
 		FROM revenue_facts WHERE company_id = $1 AND order_date >= $2 AND order_date < ($3::date + 1)`
 	args := []interface{}{companyID, dateFrom, dateTo}
 
-	if locationID != "" {
-		query += ` AND location_id = $4`
-		args = append(args, locationID)
-	}
+	locFilter, args := middleware.AddLocationFilter(args, locIDs)
+	query += locFilter
 	query += ` GROUP BY DATE(order_date) ORDER BY DATE(order_date)`
 
 	rows, err := h.db.Query(r.Context(), query, args...)
@@ -82,7 +80,7 @@ func (h *Handler) RevenueStats(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) ProfitStats(w http.ResponseWriter, r *http.Request) {
 	companyID := middleware.GetCompanyID(r.Context())
-	locationID := r.URL.Query().Get("location_id")
+	locIDs := middleware.ParseLocationFilter(r)
 	dateFrom := r.URL.Query().Get("date_from")
 	dateTo := r.URL.Query().Get("date_to")
 
@@ -97,20 +95,16 @@ func (h *Handler) ProfitStats(w http.ResponseWriter, r *http.Request) {
 	revQuery := `SELECT DATE(order_date) as d, COALESCE(SUM(revenue), 0)
 		FROM revenue_facts WHERE company_id = $1 AND order_date >= $2 AND order_date < ($3::date + 1)`
 	revArgs := []interface{}{companyID, dateFrom, dateTo}
-	if locationID != "" {
-		revQuery += ` AND location_id = $4`
-		revArgs = append(revArgs, locationID)
-	}
+	revLocFilter, revArgs := middleware.AddLocationFilter(revArgs, locIDs)
+	revQuery += revLocFilter
 	revQuery += ` GROUP BY d ORDER BY d`
 
 	// Cost per day
 	costQuery := `SELECT DATE(incoming_date) as d, COALESCE(SUM(total_sum), 0)
 		FROM purchase_facts WHERE company_id = $1 AND incoming_date >= $2 AND incoming_date < ($3::date + 1)`
 	costArgs := []interface{}{companyID, dateFrom, dateTo}
-	if locationID != "" {
-		costQuery += ` AND location_id = $4`
-		costArgs = append(costArgs, locationID)
-	}
+	costLocFilter, costArgs := middleware.AddLocationFilter(costArgs, locIDs)
+	costQuery += costLocFilter
 	costQuery += ` GROUP BY d ORDER BY d`
 
 	revMap := make(map[string]float64)
@@ -174,17 +168,15 @@ type TopProduct struct {
 
 func (h *Handler) TopProducts(w http.ResponseWriter, r *http.Request) {
 	companyID := middleware.GetCompanyID(r.Context())
-	locationID := r.URL.Query().Get("location_id")
+	locIDs := middleware.ParseLocationFilter(r)
 
 	query := `SELECT product_name, COALESCE(category, ''), SUM(quantity), SUM(revenue),
 		CASE WHEN SUM(revenue) > 0 THEN ((SUM(revenue) - SUM(cost_price)) / SUM(revenue)) * 100 ELSE 0 END
 		FROM product_sales_facts WHERE company_id = $1`
 	args := []interface{}{companyID}
 
-	if locationID != "" {
-		query += ` AND location_id = $2`
-		args = append(args, locationID)
-	}
+	locFilter, args := middleware.AddLocationFilter(args, locIDs)
+	query += locFilter
 	query += ` GROUP BY product_name, category ORDER BY SUM(revenue) DESC LIMIT 20`
 
 	rows, err := h.db.Query(r.Context(), query, args...)

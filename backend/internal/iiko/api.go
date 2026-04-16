@@ -6,8 +6,38 @@ import (
 	"encoding/xml"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 )
+
+// GetDepartments fetches restaurant departments from iiko Server.
+// Filters by type=DEPARTMENT which are actual restaurant locations.
+func (c *Client) GetDepartments(ctx context.Context) ([]Organization, error) {
+	data, err := c.doGet(ctx, "/resto/api/corporation/departments", nil)
+	if err != nil {
+		return nil, fmt.Errorf("get departments: %w", err)
+	}
+
+	type xmlDepts struct {
+		Items []struct {
+			ID   string `xml:"id"`
+			Name string `xml:"name"`
+			Type string `xml:"type"`
+		} `xml:"corporateItemDto"`
+	}
+	var xd xmlDepts
+	if err := xml.Unmarshal(data, &xd); err != nil {
+		return nil, fmt.Errorf("decode departments: %w", err)
+	}
+
+	var orgs []Organization
+	for _, d := range xd.Items {
+		if d.Type == "DEPARTMENT" {
+			orgs = append(orgs, Organization{ID: d.ID, Name: strings.TrimSpace(d.Name)})
+		}
+	}
+	return orgs, nil
+}
 
 // GetOLAPReport fetches an OLAP report from iiko Server API.
 // Returns rows as []map[string]interface{} (iiko Server returns named fields, not arrays).

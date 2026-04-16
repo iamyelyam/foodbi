@@ -7,7 +7,9 @@ type Organization struct {
 	ID                string `json:"id"`
 	Name              string `json:"name"`
 	Country           string `json:"country"`
+	City              string `json:"city"`
 	RestaurantAddress string `json:"restaurantAddress"`
+	Address           string `json:"address"`
 }
 
 // OLAP report types for iiko Server API.

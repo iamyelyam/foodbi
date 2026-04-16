@@ -34,14 +34,21 @@ export function DashboardPage() {
   })
 
   // Stock value — fetched only when Stocks view is selected
+  const locationIdsParam = selectedLocationIds.length > 0 ? selectedLocationIds.join(',') : undefined
   const { data: stockItems = [] } = useQuery<any[]>({
-    queryKey: ['stock-summary'],
-    queryFn: () => api.get('/stock').then((r) => r.data),
+    queryKey: ['stock-summary', selectedLocationIds],
+    queryFn: () => api.get('/stock', { params: { location_ids: locationIdsParam } }).then((r) => r.data),
     enabled: true, // always loaded so switching is instant
   })
   const stockValue = (stockItems as any[])
     .filter((i: any) => (i.amount || 0) > 0)
     .reduce((s: number, i: any) => s + (i.cost_sum || 0), 0)
+
+  const { data: suggestionsData } = useQuery<{ suggestions: any[] }>({
+    queryKey: ['ai-suggestions-count', selectedLocationIds],
+    queryFn: () => api.get('/ai/suggestions', { params: locationIdsParam ? { location_ids: locationIdsParam } : {} }).then((r) => r.data),
+  })
+  const suggestionsCount = suggestionsData?.suggestions?.length ?? 0
 
   // Smart location label based on multi-select state:
   //  - 1 location in company → its name (no selector value matters)
@@ -211,9 +218,11 @@ export function DashboardPage() {
                   className="w-[156px] shrink-0 rounded-[20px] bg-primary p-4 flex flex-col relative overflow-hidden text-left"
                   style={{ height: 216 }}
                 >
-                  <span className="absolute top-4 right-4 bg-[#FFEA13] rounded-[10px] px-3 py-1 text-xs font-semibold text-black z-10">
-                    12
-                  </span>
+                  {suggestionsCount > 0 && (
+                    <span className="absolute top-4 right-4 bg-[#FFEA13] rounded-[10px] px-3 py-1 text-xs font-semibold text-black z-10">
+                      {suggestionsCount}
+                    </span>
+                  )}
                   <p className="text-[20px] font-bold text-black leading-[1.15]">{t('dashboard.aiSuggestions').split(' ').map((word, i) => <span key={i}>{i > 0 && <br />}{word}</span>)}</p>
                   <p className="text-xs text-black mt-2 leading-snug">{t('dashboard.aiSuggestionsDesc')}</p>
                   <img

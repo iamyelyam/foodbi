@@ -51,7 +51,8 @@ export function StockPage() {
   const locale = useI18nStore((s) => s.locale)
   const cs = useCurrency()
   const { data: unreadCount = 0 } = useUnreadNotificationCount()
-  const locationId = useAppStore((s) => s.activeLocationId)
+  const selectedLocationIds = useAppStore((s) => s.selectedLocationIds)
+  const locationIdsParam = selectedLocationIds.length > 0 ? selectedLocationIds.join(',') : undefined
   const [selectedItem, setSelectedItem] = useState<any>(null)
   const [editingProductId, setEditingProductId] = useState<string | null>(null)
   const [aliasDraft, setAliasDraft] = useState<string>('')
@@ -108,13 +109,13 @@ export function StockPage() {
   const [dateTo] = useState<string>(todayIso())
 
   const { data: stock = [], isLoading } = useQuery<any[]>({
-    queryKey: ['stock', locationId],
-    queryFn: () => api.get('/stock', { params: { location_id: locationId } }).then((r) => r.data),
+    queryKey: ['stock', selectedLocationIds],
+    queryFn: () => api.get('/stock', { params: { location_ids: locationIdsParam } }).then((r) => r.data),
   })
 
   const { data: lowStock = [] } = useQuery<any[]>({
-    queryKey: ['low-stock', locationId],
-    queryFn: () => api.get('/stock/low-stock', { params: { location_id: locationId } }).then((r) => r.data),
+    queryKey: ['low-stock', selectedLocationIds],
+    queryFn: () => api.get('/stock/low-stock', { params: { location_ids: locationIdsParam } }).then((r) => r.data),
   })
 
   // "Used in dishes" — fetched lazily, only when bottom sheet is open with a selected item.
