@@ -36,12 +36,18 @@ type LocationSync struct {
 	Name       string
 }
 
-// getDeptName returns the location name (which equals the iiko department name)
-// for use as an OLAP Department filter. Returns "" if no name is found.
+// getDeptName returns the location name for use as an OLAP Department filter.
+// Only returns a name when the location has a real iiko_org_id (different from its own id).
+// Single-location setups or legacy locations (iiko_org_id = own id) get no filter.
 func (s *Service) getDeptName(ctx context.Context, locationID uuid.UUID) string {
 	var name string
-	err := s.db.QueryRow(ctx, `SELECT name FROM locations WHERE id = $1`, locationID).Scan(&name)
-	if err != nil {
+	var iikoOrgID *string
+	err := s.db.QueryRow(ctx, `SELECT name, iiko_org_id FROM locations WHERE id = $1`, locationID).Scan(&name, &iikoOrgID)
+	if err != nil || iikoOrgID == nil || *iikoOrgID == "" {
+		return ""
+	}
+	// Skip filter if iiko_org_id equals location's own id (legacy/fake value)
+	if *iikoOrgID == locationID.String() {
 		return ""
 	}
 	return name
@@ -211,8 +217,13 @@ func AggregateOrdersFromOLAP(rows []map[string]interface{}) map[string]*OrderAgg
 					orderNum = fmt.Sprintf("%.0f", n)
 				}
 			}
+			// Prefer OpenTime (has full timestamp) over OpenDate.Typed (date only)
+			orderDate := GetString(row, "OpenTime")
+			if orderDate == "" {
+				orderDate = GetString(row, "OpenDate.Typed")
+			}
 			agg = &OrderAgg{
-				OrderDate:   GetString(row, "OpenDate.Typed"),
+				OrderDate:   orderDate,
 				OrderNumber: orderNum,
 				OrderType:   NormalizeOrderType(GetString(row, "OrderServiceType")),
 				WaiterName:  GetString(row, "WaiterName"),
@@ -261,7 +272,7 @@ func (s *Service) SyncRevenue(ctx context.Context, client *iiko.Client, companyI
 	}
 	report, err := client.GetOLAPReport(ctx, iiko.OLAPReportRequest{
 		ReportType:       "SALES",
-		GroupByRowFields: []string{"UniqOrderId.Id", "OrderNum", "OrderServiceType", "WaiterName", "OpenDate.Typed", "DishName"},
+		GroupByRowFields: []string{"UniqOrderId.Id", "OrderNum", "OrderServiceType", "WaiterName", "OpenDate.Typed", "OpenTime", "DishName"},
 		GroupByColFields: []string{},
 		AggregateFields:  []string{"DishDiscountSumInt", "DishSumInt", "DishAmountInt"},
 		Filters:          filters,
@@ -309,16 +320,23 @@ func (s *Service) SyncRevenue(ctx context.Context, client *iiko.Client, companyI
 				Msg("sync: DEBUG upsert sample")
 			debugN++
 		}
-		parsedDate, _ := time.Parse("2006-01-02", agg.OrderDate)
+		almatyTZ4, _ := time.LoadLocation("Asia/Almaty")
+		parsedDate, _ := time.ParseInLocation("2006-01-02T15:04:05", agg.OrderDate, almatyTZ4)
 		if parsedDate.IsZero() {
-			parsedDate = time.Now()
+			parsedDate, _ = time.ParseInLocation("2006-01-02T15:04:05.000", agg.OrderDate, almatyTZ4)
+		}
+		if parsedDate.IsZero() {
+			parsedDate, _ = time.ParseInLocation("2006-01-02", agg.OrderDate, almatyTZ4)
+		}
+		if parsedDate.IsZero() {
+			parsedDate = time.Now().In(almatyTZ4)
 		}
 
 		_, err := s.db.Exec(ctx,
 			`INSERT INTO revenue_facts (company_id, location_id, iiko_order_id, order_number, order_date, revenue, discount, order_type, status, waiter_name, item_count, synced_at)
 			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
-			 ON CONFLICT (company_id, iiko_order_id) DO UPDATE SET
-			   revenue = EXCLUDED.revenue, discount = EXCLUDED.discount, status = EXCLUDED.status,
+			 ON CONFLICT (company_id, location_id, iiko_order_id) DO UPDATE SET
+			   order_date = EXCLUDED.order_date, revenue = EXCLUDED.revenue, discount = EXCLUDED.discount, status = EXCLUDED.status,
 			   waiter_name = EXCLUDED.waiter_name, item_count = EXCLUDED.item_count, order_number = EXCLUDED.order_number, synced_at = NOW()`,
 			companyID, locationID, orderID, agg.OrderNumber, parsedDate, agg.Revenue, agg.Discount, agg.OrderType, "closed", agg.WaiterName, agg.ItemCount)
 		if err != nil {
@@ -461,7 +479,7 @@ func (s *Service) SyncPurchases(ctx context.Context, client *iiko.Client, compan
 		err := s.db.QueryRow(ctx,
 			`INSERT INTO purchase_facts (company_id, location_id, iiko_invoice_id, document_number, supplier_id, supplier_name, incoming_date, status, total_sum, synced_at)
 			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
-			 ON CONFLICT (company_id, iiko_invoice_id) DO UPDATE SET
+			 ON CONFLICT (company_id, location_id, iiko_invoice_id) DO UPDATE SET
 			   status = EXCLUDED.status, total_sum = EXCLUDED.total_sum, supplier_name = EXCLUDED.supplier_name, synced_at = NOW()
 			 RETURNING id`,
 			companyID, locationID, inv.ID, inv.DocumentNumber, inv.SupplierID, supplierName, inv.IncomingDate, inv.Status, inv.Sum).Scan(&purchaseRowID)

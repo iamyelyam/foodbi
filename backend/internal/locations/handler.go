@@ -8,6 +8,8 @@ import (
 
 	"github.com/foodbi/backend/internal/iiko"
 	"github.com/foodbi/backend/internal/middleware"
+	"github.com/foodbi/backend/internal/numier"
+	"github.com/foodbi/backend/internal/numiersync"
 	gosync "github.com/foodbi/backend/internal/sync"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
@@ -20,12 +22,13 @@ import (
 var validate = validator.New()
 
 type Handler struct {
-	db          *pgxpool.Pool
-	syncService *gosync.Service
+	db               *pgxpool.Pool
+	syncService      *gosync.Service
+	numierSyncService *numiersync.Service
 }
 
-func NewHandler(db *pgxpool.Pool, syncService *gosync.Service) *Handler {
-	return &Handler{db: db, syncService: syncService}
+func NewHandler(db *pgxpool.Pool, syncService *gosync.Service, numierSyncService *numiersync.Service) *Handler {
+	return &Handler{db: db, syncService: syncService, numierSyncService: numierSyncService}
 }
 
 func (h *Handler) Routes() chi.Router {
@@ -36,6 +39,8 @@ func (h *Handler) Routes() chi.Router {
 	r.Delete("/{id}", h.Delete)
 	r.Get("/iiko-config", h.GetIikoConfig)
 	r.Put("/iiko-config", h.SetIikoConfig)
+	r.Get("/numier-config", h.GetNumierConfig)
+	r.Put("/numier-config", h.SetNumierConfig)
 	r.Get("/sync-status", h.SyncStatus)
 	r.Post("/{id}/sync", h.TriggerSync)
 	return r
@@ -104,11 +109,71 @@ func (h *Handler) SetIikoConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
 }
 
+// GetNumierConfig returns the current NUMIER API key (masked).
+// GET /api/v1/locations/numier-config
+func (h *Handler) GetNumierConfig(w http.ResponseWriter, r *http.Request) {
+	companyID := middleware.GetCompanyID(r.Context())
+
+	var apiKey *string
+	err := h.db.QueryRow(r.Context(),
+		`SELECT numier_api_key FROM companies WHERE id = $1`, companyID).
+		Scan(&apiKey)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]string{})
+		return
+	}
+
+	result := map[string]string{}
+	if apiKey != nil && len(*apiKey) > 0 {
+		result["numier_api_key_set"] = "true"
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// SetNumierConfig saves NUMIER API key on the company record.
+// PUT /api/v1/locations/numier-config
+func (h *Handler) SetNumierConfig(w http.ResponseWriter, r *http.Request) {
+	role := middleware.GetRole(r.Context())
+	if role != "owner" {
+		writeError(w, http.StatusForbidden, "only owners can configure numier")
+		return
+	}
+
+	var input struct {
+		APIKey string `json:"numier_api_key"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if input.APIKey == "" {
+		writeError(w, http.StatusBadRequest, "numier_api_key is required")
+		return
+	}
+
+	// Validate the API key by calling NUMIER
+	client := numier.NewClient(input.APIKey)
+	if err := client.Validate(r.Context()); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid NUMIER API key: "+err.Error())
+		return
+	}
+
+	companyID := middleware.GetCompanyID(r.Context())
+	_, err := h.db.Exec(r.Context(),
+		`UPDATE companies SET numier_api_key = $1, updated_at = NOW() WHERE id = $2`,
+		input.APIKey, companyID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to save numier config")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
+}
+
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	companyID := middleware.GetCompanyID(r.Context())
 
 	rows, err := h.db.Query(r.Context(),
-		`SELECT id, company_id, name, address, iiko_org_id, created_at FROM locations WHERE company_id = $1 ORDER BY name`,
+		`SELECT id, company_id, name, address, iiko_org_id, pos_system, created_at FROM locations WHERE company_id = $1 ORDER BY name`,
 		companyID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to fetch locations")
@@ -122,6 +187,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		Name      string    `json:"name"`
 		Address   string    `json:"address"`
 		IikoOrgID *string   `json:"iiko_org_id,omitempty"`
+		PosSystem string    `json:"pos_system"`
 		CreatedAt string    `json:"created_at"`
 	}
 
@@ -131,7 +197,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		var address *string
 		var iikoOrgID *string
 		var createdAt time.Time
-		if err := rows.Scan(&loc.ID, &loc.CompanyID, &loc.Name, &address, &iikoOrgID, &createdAt); err != nil {
+		if err := rows.Scan(&loc.ID, &loc.CompanyID, &loc.Name, &address, &iikoOrgID, &loc.PosSystem, &createdAt); err != nil {
 			continue
 		}
 		if address != nil {
@@ -315,35 +381,48 @@ func (h *Handler) TriggerSync(w http.ResponseWriter, r *http.Request) {
 	companyID := middleware.GetCompanyID(r.Context())
 	id := chi.URLParam(r, "id")
 
-	// Verify the placeholder location belongs to company
-	var exists bool
-	h.db.QueryRow(r.Context(),
-		`SELECT EXISTS(SELECT 1 FROM locations WHERE id = $1 AND company_id = $2)`,
-		id, companyID).Scan(&exists)
-	if !exists {
+	// Verify the location belongs to company and get its POS system
+	var posSystem *string
+	err := h.db.QueryRow(r.Context(),
+		`SELECT pos_system FROM locations WHERE id = $1 AND company_id = $2`,
+		id, companyID).Scan(&posSystem)
+	if err != nil {
 		writeError(w, http.StatusNotFound, "location not found")
 		return
 	}
 
-	placeholderUUID, err := uuid.Parse(id)
+	locationUUID, err := uuid.Parse(id)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid location id")
 		return
 	}
 
-	// Get iiko credentials from company
-	var iikoURL, iikoLogin, iikoPassword string
-	err = h.db.QueryRow(r.Context(),
-		`SELECT iiko_server_url, iiko_login, iiko_password FROM companies
-		 WHERE id = $1 AND iiko_server_url IS NOT NULL AND iiko_server_url != ''`,
-		companyID).Scan(&iikoURL, &iikoLogin, &iikoPassword)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "iiko not configured for this company")
-		return
+	// Route to the correct POS sync based on location's pos_system
+	if posSystem != nil && *posSystem == "numier" {
+		// NUMIER sync
+		var apiKey string
+		err = h.db.QueryRow(r.Context(),
+			`SELECT numier_api_key FROM companies
+			 WHERE id = $1 AND numier_api_key IS NOT NULL AND numier_api_key != ''`,
+			companyID).Scan(&apiKey)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "numier not configured for this company")
+			return
+		}
+		go h.runNumierLocationSync(companyID, locationUUID, apiKey)
+	} else {
+		// iiko sync (default)
+		var iikoURL, iikoLogin, iikoPassword string
+		err = h.db.QueryRow(r.Context(),
+			`SELECT iiko_server_url, iiko_login, iiko_password FROM companies
+			 WHERE id = $1 AND iiko_server_url IS NOT NULL AND iiko_server_url != ''`,
+			companyID).Scan(&iikoURL, &iikoLogin, &iikoPassword)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "iiko not configured for this company")
+			return
+		}
+		go h.runMultiLocationSync(companyID, locationUUID, iikoURL, iikoLogin, iikoPassword)
 	}
-
-	// Run sync in background goroutine
-	go h.runMultiLocationSync(companyID, placeholderUUID, iikoURL, iikoLogin, iikoPassword)
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "sync_started", "location_id": id})
 }
@@ -370,18 +449,32 @@ func (h *Handler) runMultiLocationSync(companyID, placeholderID uuid.UUID, iikoU
 
 	logger.Info().Int("departments", len(depts)).Msg("trigger-sync: discovered iiko departments")
 
-	// Rename placeholder to first department, create new locations for the rest
+	// Find or create a location for each department. Never overwrite existing locations.
 	locationIDs := make([]uuid.UUID, len(depts))
+	placeholderUsed := false
 
 	for i, dept := range depts {
-		if i == 0 {
-			// Reuse placeholder location for first department
+		// Check if a location with this iiko_org_id already exists
+		var existingID uuid.UUID
+		err := h.db.QueryRow(ctx,
+			`SELECT id FROM locations WHERE company_id = $1 AND iiko_org_id = $2`,
+			companyID, dept.ID).Scan(&existingID)
+		if err == nil {
+			// Location already exists — just sync it
+			locationIDs[i] = existingID
+			logger.Info().Str("dept", dept.Name).Msg("trigger-sync: existing location found")
+			continue
+		}
+
+		if !placeholderUsed {
+			// Reuse placeholder for the first new department
 			_, _ = h.db.Exec(ctx,
-				`UPDATE locations SET name = $1, iiko_org_id = $2, updated_at = NOW() WHERE id = $3`,
+				`UPDATE locations SET name = $1, iiko_org_id = $2, pos_system = 'iiko', updated_at = NOW() WHERE id = $3`,
 				dept.Name, dept.ID, placeholderID)
-			locationIDs[0] = placeholderID
+			locationIDs[i] = placeholderID
+			placeholderUsed = true
 		} else {
-			// Create new location for each additional department
+			// Create new location for additional departments
 			newID := uuid.New()
 			_, err := h.db.Exec(ctx,
 				`INSERT INTO locations (id, company_id, name, address, iiko_org_id, pos_system, created_at, updated_at)
@@ -437,6 +530,67 @@ func (h *Handler) runSingleLocationSync(ctx context.Context, client *iiko.Client
 	}
 
 	l.Info().Msg("trigger-sync: location sync complete")
+}
+
+// runNumierLocationSync runs a full NUMIER sync for a single location.
+func (h *Handler) runNumierLocationSync(companyID, locationID uuid.UUID, apiKey string) {
+	ctx := context.Background()
+	logger := log.With().Str("company", companyID.String()).Str("pos", "numier").Logger()
+
+	client := numier.NewClient(apiKey)
+
+	// Get TPV ID for this location
+	var tpvID string
+	h.db.QueryRow(ctx,
+		`SELECT COALESCE(numier_tpv_id, '') FROM locations WHERE id = $1`,
+		locationID).Scan(&tpvID)
+
+	if tpvID == "" {
+		// Try to discover and map locales
+		locations, err := h.numierSyncService.DiscoverAndMapLocales(ctx, client, companyID)
+		if err != nil {
+			logger.Error().Err(err).Msg("numier-trigger: discover locales failed")
+			return
+		}
+		for _, loc := range locations {
+			if loc.LocationID == locationID {
+				tpvID = loc.NumierTpvID
+				break
+			}
+		}
+		if tpvID == "" {
+			logger.Error().Str("location", locationID.String()).Msg("numier-trigger: no TPV ID found for location")
+			return
+		}
+	}
+
+	l := logger.With().Str("location", locationID.String()).Str("tpv_id", tpvID).Logger()
+
+	if err := h.numierSyncService.SyncRevenue(ctx, client, companyID, locationID, tpvID); err != nil {
+		l.Error().Err(err).Msg("numier-trigger: revenue failed")
+	}
+
+	if err := h.numierSyncService.SyncProductSales(ctx, client, companyID, locationID, tpvID); err != nil {
+		l.Error().Err(err).Msg("numier-trigger: product_sales failed")
+	}
+
+	if err := h.numierSyncService.SyncPurchases(ctx, client, companyID, locationID, tpvID); err != nil {
+		l.Error().Err(err).Msg("numier-trigger: purchases failed")
+	}
+
+	if err := h.numierSyncService.SyncCalculatedStock(ctx, companyID, locationID); err != nil {
+		l.Error().Err(err).Msg("numier-trigger: calculated stock failed")
+	}
+
+	if err := h.numierSyncService.SyncRecipes(ctx, client, companyID, locationID, tpvID); err != nil {
+		l.Error().Err(err).Msg("numier-trigger: recipes failed")
+	}
+
+	if err := h.numierSyncService.RefreshDashboardViews(ctx); err != nil {
+		l.Warn().Err(err).Msg("numier-trigger: dashboard refresh failed")
+	}
+
+	l.Info().Msg("numier-trigger: location sync complete")
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
