@@ -4,10 +4,21 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 )
+
+// parseInt32Env returns the env var as int32, or the default if missing/invalid.
+func parseInt32Env(key string, def int32) int32 {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 32); err == nil && n > 0 {
+			return int32(n)
+		}
+	}
+	return def
+}
 
 func NewPool(ctx context.Context) (*pgxpool.Pool, error) {
 	dsn := os.Getenv("DATABASE_URL")
@@ -26,8 +37,10 @@ func NewPool(ctx context.Context) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("parse db config: %w", err)
 	}
 
-	config.MaxConns = 20
-	config.MinConns = 2
+	// Sized for SaaS scale: 10K+ companies + API traffic.
+	// DATABASE_MAX_CONNS / DATABASE_MIN_CONNS override defaults.
+	config.MaxConns = parseInt32Env("DATABASE_MAX_CONNS", 100)
+	config.MinConns = parseInt32Env("DATABASE_MIN_CONNS", 10)
 
 	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
@@ -39,7 +52,7 @@ func NewPool(ctx context.Context) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("ping db: %w", err)
 	}
 
-	log.Info().Msg("database connected")
+	log.Info().Int32("max_conns", config.MaxConns).Int32("min_conns", config.MinConns).Msg("database connected")
 	return pool, nil
 }
 
