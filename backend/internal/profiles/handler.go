@@ -50,7 +50,7 @@ func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	var p Profile
 	err := h.db.QueryRow(r.Context(),
 		`SELECT u.id, u.email, u.first_name, u.last_name, COALESCE(u.phone,''), u.role, c.name,
-		 COALESCE(c.country,'KZ'), COALESCE(c.currency,'KZT'), COALESCE(c.currency_symbol,'₸'), COALESCE(c.locale,'ru-KZ')
+		 COALESCE(c.country,'KZ'), COALESCE(c.currency_code,'KZT'), COALESCE(c.currency_symbol,'₸'), COALESCE(c.locale,'ru-KZ')
 		 FROM users u JOIN companies c ON c.id = u.company_id
 		 WHERE u.id = $1 AND u.company_id = $2`, userID, companyID).
 		Scan(&p.ID, &p.Email, &p.FirstName, &p.LastName, &p.Phone, &p.Role, &p.Company,
