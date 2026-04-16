@@ -62,19 +62,31 @@ export const useAppStore = create<AppState>((set) => ({
   dateTo: todayStr(),
   setDateRange: (from, to) => set({ dateFrom: from, dateTo: to }),
   selectedLocationIds: (() => {
-    try { const v = localStorage.getItem(ACTIVE_LOC_KEY); return v ? [v] : [] } catch { return [] }
+    try {
+      const v = localStorage.getItem(ACTIVE_LOC_KEY)
+      if (!v) return []
+      // Support both legacy single-id and new JSON array format
+      if (v.startsWith('[')) return JSON.parse(v) as string[]
+      return [v]
+    } catch { return [] }
   })(),
   activeLocationId: (() => {
-    try { return localStorage.getItem(ACTIVE_LOC_KEY) } catch { return null }
+    try {
+      const v = localStorage.getItem(ACTIVE_LOC_KEY)
+      if (!v) return null
+      if (v.startsWith('[')) { const arr = JSON.parse(v) as string[]; return arr.length === 1 ? arr[0] : null }
+      return v
+    } catch { return null }
   })(),
   setSelectedLocations: (ids) => {
     const active = ids.length === 1 ? ids[0] : null
-    try { active ? localStorage.setItem(ACTIVE_LOC_KEY, active) : localStorage.removeItem(ACTIVE_LOC_KEY) } catch {}
+    try { localStorage.setItem(ACTIVE_LOC_KEY, JSON.stringify(ids)) } catch {}
     set({ selectedLocationIds: ids, activeLocationId: active })
   },
   setActiveLocation: (id) => {
-    try { id ? localStorage.setItem(ACTIVE_LOC_KEY, id) : localStorage.removeItem(ACTIVE_LOC_KEY) } catch {}
-    set({ activeLocationId: id, selectedLocationIds: id ? [id] : [] })
+    const ids = id ? [id] : []
+    try { localStorage.setItem(ACTIVE_LOC_KEY, JSON.stringify(ids)) } catch {}
+    set({ activeLocationId: id, selectedLocationIds: ids })
   },
   companySettings: {
     country: 'KZ',
