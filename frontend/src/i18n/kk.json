@@ -514,7 +514,13 @@
   "location": {
     "noLocation": "Локация жоқ",
     "allLocations": "Барлық локациялар",
-    "multipleLocations": "{count} локация"
+    "multipleLocations": "{count} локация",
+    "selectLocation": "Локацияны таңдау",
+    "searchLocations": "Локацияларды іздеу...",
+    "viewCombinedData": "Біріктірілген деректер",
+    "addLocation": "Локация қосу",
+    "noLocationsFound": "Локация табылмады",
+    "synced": "Синхр. {date}"
   },
   "orderDetail": {
     "title": "№{id} тапсырыс",

@@ -7,6 +7,7 @@ import { useAppStore } from '@/stores/app'
 import { MapPin, Check, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
+import { useT, useI18nStore } from '@/i18n'
 
 interface LocationSwitcherProps {
   isOpen: boolean
@@ -15,6 +16,8 @@ interface LocationSwitcherProps {
 
 export function LocationSwitcher({ isOpen, onClose }: LocationSwitcherProps) {
   const navigate = useNavigate()
+  const t = useT()
+  const locale = useI18nStore((s) => s.locale)
   const { selectedLocationIds, setSelectedLocations } = useAppStore()
   const [search, setSearch] = useState('')
 
@@ -42,7 +45,6 @@ export function LocationSwitcher({ isOpen, onClose }: LocationSwitcherProps) {
     if (set.has(id)) set.delete(id)
     else set.add(id)
     const next = Array.from(set)
-    // If user reduced to nothing, treat as "all" (empty array)
     setSelectedLocations(next.length === allIds.length ? [] : next)
   }
 
@@ -51,10 +53,10 @@ export function LocationSwitcher({ isOpen, onClose }: LocationSwitcherProps) {
   }
 
   return (
-    <BottomSheet isOpen={isOpen} onClose={onClose} title="Select Location">
+    <BottomSheet isOpen={isOpen} onClose={onClose} title={t('location.selectLocation')}>
       <div className="mb-3">
         <SearchBar
-          placeholder="Search locations..."
+          placeholder={t('location.searchLocations')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onClear={() => setSearch('')}
@@ -77,8 +79,8 @@ export function LocationSwitcher({ isOpen, onClose }: LocationSwitcherProps) {
             <MapPin className={cn('h-5 w-5', isAllSelected ? 'text-white' : 'text-primary')} />
           </div>
           <div className="flex-1">
-            <p className="text-sm font-semibold text-dark">All locations</p>
-            <p className="text-xs text-gray mt-0.5">View combined data</p>
+            <p className="text-sm font-semibold text-dark">{t('location.allLocations')}</p>
+            <p className="text-xs text-gray mt-0.5">{t('location.viewCombinedData')}</p>
           </div>
           {isAllSelected && <Check className="h-5 w-5 text-primary" />}
         </button>
@@ -105,7 +107,7 @@ export function LocationSwitcher({ isOpen, onClose }: LocationSwitcherProps) {
                 {loc.address && <p className="text-xs text-gray mt-0.5">{loc.address}</p>}
                 {loc.last_synced_at && (
                   <p className="text-xs text-gray mt-0.5">
-                    Synced {new Date(loc.last_synced_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    {t('location.synced', { date: new Date(loc.last_synced_at).toLocaleDateString(locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) })}
                   </p>
                 )}
               </div>
@@ -115,7 +117,7 @@ export function LocationSwitcher({ isOpen, onClose }: LocationSwitcherProps) {
         })}
 
         {filtered.length === 0 && search.trim() && (
-          <p className="text-sm text-gray text-center py-4">No locations found</p>
+          <p className="text-sm text-gray text-center py-4">{t('location.noLocationsFound')}</p>
         )}
 
         <button
@@ -125,14 +127,14 @@ export function LocationSwitcher({ isOpen, onClose }: LocationSwitcherProps) {
           <div className="w-10 h-10 rounded-full bg-bg-alt flex items-center justify-center">
             <Plus className="h-5 w-5 text-gray" />
           </div>
-          <span className="text-sm font-medium text-primary">Add Location</span>
+          <span className="text-sm font-medium text-primary">{t('location.addLocation')}</span>
         </button>
 
         <button
           onClick={onClose}
           className="w-full mt-2 py-3 rounded-full bg-primary text-dark font-semibold"
         >
-          Done
+          {t('common.done')}
         </button>
       </div>
     </BottomSheet>

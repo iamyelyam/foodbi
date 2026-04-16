@@ -514,7 +514,13 @@
   "location": {
     "noLocation": "No location",
     "allLocations": "All locations",
-    "multipleLocations": "{count} locations"
+    "multipleLocations": "{count} locations",
+    "selectLocation": "Select location",
+    "searchLocations": "Search locations...",
+    "viewCombinedData": "View combined data",
+    "addLocation": "Add location",
+    "noLocationsFound": "No locations found",
+    "synced": "Synced {date}"
   },
   "orderDetail": {
     "title": "Order #{id}",

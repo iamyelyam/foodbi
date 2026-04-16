@@ -514,7 +514,13 @@
   "location": {
     "noLocation": "Нет локации",
     "allLocations": "Все локации",
-    "multipleLocations": "{count} локаций"
+    "multipleLocations": "{count} локаций",
+    "selectLocation": "Выбор локации",
+    "searchLocations": "Поиск локаций...",
+    "viewCombinedData": "Общие данные",
+    "addLocation": "Добавить локацию",
+    "noLocationsFound": "Локации не найдены",
+    "synced": "Синхр. {date}"
   },
   "orderDetail": {
     "title": "Заказ №{id}",

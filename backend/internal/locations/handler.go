@@ -26,9 +26,46 @@ func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
 	r.Get("/", h.List)
 	r.Post("/", h.Create)
+	r.Put("/iiko-config", h.SetIikoConfig)
 	r.Get("/sync-status", h.SyncStatus)
 	r.Post("/{id}/sync", h.TriggerSync)
 	return r
+}
+
+type IikoConfigInput struct {
+	ServerURL string `json:"iiko_server_url" validate:"required"`
+	Login     string `json:"iiko_login" validate:"required"`
+	Password  string `json:"iiko_password" validate:"required"`
+}
+
+// SetIikoConfig saves iiko Server API credentials on the company record.
+// PUT /api/v1/locations/iiko-config
+func (h *Handler) SetIikoConfig(w http.ResponseWriter, r *http.Request) {
+	role := middleware.GetRole(r.Context())
+	if role != "owner" {
+		writeError(w, http.StatusForbidden, "only owners can configure iiko")
+		return
+	}
+
+	var input IikoConfigInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if input.ServerURL == "" || input.Login == "" || input.Password == "" {
+		writeError(w, http.StatusBadRequest, "all iiko fields are required")
+		return
+	}
+
+	companyID := middleware.GetCompanyID(r.Context())
+	_, err := h.db.Exec(r.Context(),
+		`UPDATE companies SET iiko_server_url = $1, iiko_login = $2, iiko_password = $3, updated_at = NOW() WHERE id = $4`,
+		input.ServerURL, input.Login, input.Password, companyID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to save iiko config")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {

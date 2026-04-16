@@ -36,19 +36,27 @@
 
 /* Mobile-first base. Capacitor's contentInset:'always' handles safe-areas
    natively — no env() hacks needed. */
-html, body {
+html {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* html is the viewport frame — it never scrolls.
+     position:fixed (Tabbar) stays pinned to this frame. */
+  overflow: hidden;
+  height: 100%;
+}
+
+body {
   margin: 0;
   background-color: var(--color-bg);
   color: var(--color-dark);
   -webkit-text-size-adjust: 100%;
-  /* html+body don't scroll — #root does. This makes position:fixed
-     (Tabbar) truly fixed because the viewport never moves. */
-  overflow: hidden;
+  /* body IS the scroll container. Page wrappers grow with content
+     and their bg-white extends naturally — no grey bleed-through. */
   height: 100%;
-  /* Status bar spacing handled by Capacitor contentInset:'always'. */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: none;
 }
 
 /* Desktop preview: cap at 375px */
@@ -60,10 +68,7 @@ html, body {
 }
 
 #root {
-  height: 100%;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: none;
+  min-height: 100%;
   display: flex;
   flex-direction: column;
 }

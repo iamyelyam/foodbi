@@ -514,7 +514,13 @@
   "location": {
     "noLocation": "Sin ubicación",
     "allLocations": "Todas las ubicaciones",
-    "multipleLocations": "{count} ubicaciones"
+    "multipleLocations": "{count} ubicaciones",
+    "selectLocation": "Seleccionar ubicación",
+    "searchLocations": "Buscar ubicaciones...",
+    "viewCombinedData": "Ver datos combinados",
+    "addLocation": "Agregar ubicación",
+    "noLocationsFound": "No se encontraron ubicaciones",
+    "synced": "Sincr. {date}"
   },
   "orderDetail": {
     "title": "Pedido #{id}",
