@@ -11,12 +11,14 @@ import (
 
 	"github.com/foodbi/backend/internal/ai"
 	"github.com/foodbi/backend/internal/auth"
+	"github.com/foodbi/backend/internal/cache"
 	"github.com/foodbi/backend/internal/dashboard"
 	"github.com/foodbi/backend/internal/database"
 	"github.com/foodbi/backend/internal/employees"
 	"github.com/foodbi/backend/internal/files"
 	"github.com/foodbi/backend/internal/locations"
 	"github.com/foodbi/backend/internal/middleware"
+	"github.com/foodbi/backend/internal/numiersync"
 	gosync "github.com/foodbi/backend/internal/sync"
 	"github.com/foodbi/backend/internal/notifications"
 	"github.com/foodbi/backend/internal/payments"
@@ -69,11 +71,15 @@ func main() {
 		log.Warn().Msg("TELEGRAM_BOT_TOKEN not set — telegram bot disabled")
 	}
 
+	dashCache := cache.New()
+	defer dashCache.Close()
+
 	authService := auth.NewService(db)
 	authHandler := auth.NewHandler(authService)
 	syncService := gosync.NewService(db)
-	locHandler := locations.NewHandler(db, syncService)
-	dashHandler := dashboard.NewHandler(db)
+	numierSyncSvc := numiersync.NewService(db)
+	locHandler := locations.NewHandler(db, syncService, numierSyncSvc)
+	dashHandler := dashboard.NewHandler(db, dashCache)
 	revHandler := revenue.NewHandler(db)
 	purchHandler := purchases.NewHandler(db)
 	statsHandler := statistics.NewHandler(db)

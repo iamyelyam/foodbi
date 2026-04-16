@@ -4,19 +4,46 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/foodbi/backend/internal/cache"
 	"github.com/foodbi/backend/internal/middleware"
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// cacheTTL controls how long dashboard responses are cached.
+// 2 minutes balances freshness with load reduction — sync runs every 15 min
+// so data is anyway up to 15 min stale.
+const cacheTTL = 2 * time.Minute
+
 type Handler struct {
-	db *pgxpool.Pool
+	db    *pgxpool.Pool
+	cache *cache.Cache
 }
 
-func NewHandler(db *pgxpool.Pool) *Handler {
-	return &Handler{db: db}
+func NewHandler(db *pgxpool.Pool, c *cache.Cache) *Handler {
+	return &Handler{db: db, cache: c}
+}
+
+// cacheKeySummary builds a deterministic cache key for dashboard/summary.
+func cacheKeySummary(companyID string, locIDs []uuid.UUID, dateFrom, dateTo string) string {
+	parts := make([]string, 0, len(locIDs))
+	for _, id := range locIDs {
+		parts = append(parts, id.String())
+	}
+	return "dash:sum:" + companyID + ":" + strings.Join(parts, ",") + ":" + dateFrom + ":" + dateTo
+}
+
+// cacheKeyTrend builds a cache key for revenue-trend.
+func cacheKeyTrend(companyID string, locIDs []uuid.UUID, days int) string {
+	parts := make([]string, 0, len(locIDs))
+	for _, id := range locIDs {
+		parts = append(parts, id.String())
+	}
+	return "dash:trend:" + companyID + ":" + strings.Join(parts, ",") + ":" + strconv.Itoa(days)
 }
 
 func (h *Handler) Routes() chi.Router {
@@ -52,6 +79,17 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 	locIDs := middleware.ParseLocationFilter(r)
 	dateFromParam := r.URL.Query().Get("date_from")
 	dateToParam := r.URL.Query().Get("date_to")
+
+	// Cache lookup — all query inputs baked into the key.
+	sumKey := cacheKeySummary(companyID.String(), locIDs, dateFromParam, dateToParam)
+	if h.cache != nil {
+		if cached, ok := h.cache.Get(sumKey); ok {
+			if summary, ok := cached.(DashboardSummary); ok {
+				writeJSON(w, http.StatusOK, summary)
+				return
+			}
+		}
+	}
 
 	// Use Almaty timezone (UTC+5) so "today" matches the restaurant's local day,
 	// not UTC midnight (which would cut off orders before 05:00 Almaty).
@@ -165,6 +203,9 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 		summary.RevenueChangePercent = ((summary.WeekRevenue - summary.PrevWeekRevenue) / summary.PrevWeekRevenue) * 100
 	}
 
+	if h.cache != nil {
+		h.cache.Set(sumKey, summary, cacheTTL)
+	}
 	writeJSON(w, http.StatusOK, summary)
 }
 
@@ -182,6 +223,16 @@ func (h *Handler) RevenueTrend(w http.ResponseWriter, r *http.Request) {
 	if d := r.URL.Query().Get("days"); d != "" {
 		if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 && parsed <= 365 {
 			days = parsed
+		}
+	}
+
+	tkey := cacheKeyTrend(companyID.String(), locIDs, days)
+	if h.cache != nil {
+		if cached, ok := h.cache.Get(tkey); ok {
+			if pts, ok := cached.([]TrendPoint); ok {
+				writeJSON(w, http.StatusOK, pts)
+				return
+			}
 		}
 	}
 
@@ -213,6 +264,9 @@ func (h *Handler) RevenueTrend(w http.ResponseWriter, r *http.Request) {
 		points = []TrendPoint{}
 	}
 
+	if h.cache != nil {
+		h.cache.Set(tkey, points, cacheTTL)
+	}
 	writeJSON(w, http.StatusOK, points)
 }
 
