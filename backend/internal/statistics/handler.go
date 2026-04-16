@@ -10,6 +10,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+func nowAlmaty() time.Time {
+	tz, _ := time.LoadLocation("Asia/Almaty")
+	return time.Now().In(tz)
+}
+
 type Handler struct {
 	db *pgxpool.Pool
 }
@@ -41,10 +46,10 @@ func (h *Handler) RevenueStats(w http.ResponseWriter, r *http.Request) {
 	dateTo := r.URL.Query().Get("date_to")
 
 	if dateFrom == "" {
-		dateFrom = time.Now().AddDate(0, -1, 0).Format("2006-01-02")
+		dateFrom = nowAlmaty().AddDate(0, -1, 0).Format("2006-01-02")
 	}
 	if dateTo == "" {
-		dateTo = time.Now().Format("2006-01-02")
+		dateTo = nowAlmaty().Format("2006-01-02")
 	}
 
 	query := `SELECT DATE(order_date), COALESCE(SUM(revenue), 0), COUNT(*)
@@ -85,10 +90,10 @@ func (h *Handler) ProfitStats(w http.ResponseWriter, r *http.Request) {
 	dateTo := r.URL.Query().Get("date_to")
 
 	if dateFrom == "" {
-		dateFrom = time.Now().AddDate(0, -1, 0).Format("2006-01-02")
+		dateFrom = nowAlmaty().AddDate(0, -1, 0).Format("2006-01-02")
 	}
 	if dateTo == "" {
-		dateTo = time.Now().Format("2006-01-02")
+		dateTo = nowAlmaty().Format("2006-01-02")
 	}
 
 	// Revenue per day

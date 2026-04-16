@@ -53,7 +53,10 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 	dateFromParam := r.URL.Query().Get("date_from")
 	dateToParam := r.URL.Query().Get("date_to")
 
-	now := time.Now().Truncate(24 * time.Hour)
+	// Use Almaty timezone (UTC+5) so "today" matches the restaurant's local day,
+	// not UTC midnight (which would cut off orders before 05:00 Almaty).
+	almatyTZ, _ := time.LoadLocation("Asia/Almaty")
+	now := time.Now().In(almatyTZ).Truncate(24 * time.Hour)
 	rangeStart := now
 	rangeEnd := now.AddDate(0, 0, 1) // exclusive end for >= start AND < end
 	weekStart := now.AddDate(0, 0, -int(now.Weekday()))

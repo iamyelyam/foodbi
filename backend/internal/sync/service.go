@@ -237,8 +237,9 @@ func (s *Service) SyncRevenue(ctx context.Context, client *iiko.Client, companyI
 	}
 	start := time.Now()
 
-	dateTo := time.Now().Format("2006-01-02")
-	dateFrom := time.Date(2026, 1, 1, 0, 0, 0, 0, time.Local).Format("2006-01-02")
+	almatyTZ, _ := time.LoadLocation("Asia/Almaty")
+	dateTo := time.Now().In(almatyTZ).Format("2006-01-02")
+	dateFrom := time.Date(2026, 1, 1, 0, 0, 0, 0, almatyTZ).Format("2006-01-02")
 
 	// Include DishName in GroupByRowFields to get per-dish rows.
 	// iiko returns DishSumInt per-dish; we SUM them per order in Go.
@@ -340,8 +341,9 @@ func (s *Service) SyncProductSales(ctx context.Context, client *iiko.Client, com
 	}
 	start := time.Now()
 
-	dateTo := time.Now().Format("2006-01-02")
-	dateFrom := time.Date(2026, 1, 1, 0, 0, 0, 0, time.Local).Format("2006-01-02")
+	almatyTZ2, _ := time.LoadLocation("Asia/Almaty")
+	dateTo := time.Now().In(almatyTZ2).Format("2006-01-02")
+	dateFrom := time.Date(2026, 1, 1, 0, 0, 0, 0, almatyTZ2).Format("2006-01-02")
 
 	psFilters := map[string]interface{}{
 		"OpenDate.Typed": map[string]interface{}{
@@ -422,8 +424,9 @@ func (s *Service) SyncPurchases(ctx context.Context, client *iiko.Client, compan
 	}
 	start := time.Now()
 
-	dateFrom := time.Now().AddDate(0, 0, -30).Format("2006-01-02")
-	dateTo := time.Now().Format("2006-01-02")
+	almatyTZ3, _ := time.LoadLocation("Asia/Almaty")
+	dateFrom := time.Now().In(almatyTZ3).AddDate(0, 0, -30).Format("2006-01-02")
+	dateTo := time.Now().In(almatyTZ3).Format("2006-01-02")
 
 	invoices, err := client.GetPurchaseInvoices(ctx, dateFrom, dateTo)
 	if err != nil {
