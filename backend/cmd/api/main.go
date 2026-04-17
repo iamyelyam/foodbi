@@ -8,12 +8,15 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata" // Embed IANA timezone DB so Asia/Almaty works on Alpine containers
 
 	"github.com/foodbi/backend/internal/ai"
 	"github.com/foodbi/backend/internal/auth"
 	"github.com/foodbi/backend/internal/cache"
 	"github.com/foodbi/backend/internal/dashboard"
 	"github.com/foodbi/backend/internal/database"
+	"github.com/foodbi/backend/internal/dblock"
+	"github.com/foodbi/backend/internal/email"
 	"github.com/foodbi/backend/internal/employees"
 	"github.com/foodbi/backend/internal/files"
 	"github.com/foodbi/backend/internal/locations"
@@ -74,7 +77,40 @@ func main() {
 	dashCache := cache.New()
 	defer dashCache.Close()
 
-	authService := auth.NewService(db)
+	// Email (Resend) — Phase 6.
+	// RESEND_API_KEY is required in production and fails fast if missing; in
+	// development an empty key puts the client in dry-run mode (rows are
+	// enqueued and the processor marks them 'dry_run_skipped' without calling
+	// out to Resend). EMAIL_FROM / EMAIL_FROM_NAME default to a local sentinel
+	// the operator must replace before going live.
+	resendKey := os.Getenv("RESEND_API_KEY")
+	if resendKey == "" && os.Getenv("ENV") == "production" {
+		log.Fatal().Msg("RESEND_API_KEY is required in production")
+	}
+	if resendKey == "" {
+		log.Warn().Msg("RESEND_API_KEY not set — email processor will run in dry-run mode")
+	}
+	emailFrom := os.Getenv("EMAIL_FROM")
+	if emailFrom == "" {
+		emailFrom = "noreply@foodbi.local"
+	}
+	emailFromName := os.Getenv("EMAIL_FROM_NAME")
+	if emailFromName == "" {
+		emailFromName = "FoodBI"
+	}
+	appURL := os.Getenv("APP_URL")
+	if appURL == "" {
+		appURL = "http://localhost:5173"
+	}
+	emailClient := email.NewClient(resendKey, emailFrom, emailFromName)
+
+	// Start the outbox processor. Only one replica will hold the advisory
+	// lock — others will idle-poll for it.
+	outboxCtx, outboxCancel := context.WithCancel(context.Background())
+	defer outboxCancel()
+	go email.RunProcessor(outboxCtx, db, emailClient, dblock.EmailOutboxProcessor)
+
+	authService := auth.NewService(db, emailClient, appURL)
 	authHandler := auth.NewHandler(authService)
 	syncService := gosync.NewService(db)
 	numierSyncSvc := numiersync.NewService(db)
@@ -189,7 +225,8 @@ func main() {
 	<-quit
 
 	log.Info().Msg("shutting down server")
-	botCancel() // stop telegram bot
+	botCancel()    // stop telegram bot
+	outboxCancel() // stop email outbox processor
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {

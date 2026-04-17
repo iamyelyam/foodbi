@@ -8,6 +8,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	_ "time/tzdata" // Embed IANA timezone DB so Asia/Almaty works on Alpine containers
 
 	"github.com/foodbi/backend/internal/database"
 	"github.com/foodbi/backend/internal/iiko"
