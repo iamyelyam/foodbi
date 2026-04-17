@@ -6,13 +6,13 @@ import (
 	"time"
 
 	"github.com/foodbi/backend/internal/middleware"
+	"github.com/foodbi/backend/internal/timezone"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func nowAlmaty() time.Time {
-	tz, _ := time.LoadLocation("Asia/Almaty")
-	return time.Now().In(tz)
+	return timezone.Now()
 }
 
 type Handler struct {

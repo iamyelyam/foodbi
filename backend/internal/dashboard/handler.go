@@ -9,6 +9,7 @@ import (
 
 	"github.com/foodbi/backend/internal/cache"
 	"github.com/foodbi/backend/internal/middleware"
+	"github.com/foodbi/backend/internal/timezone"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -93,8 +94,7 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 
 	// Use Almaty timezone (UTC+5) so "today" matches the restaurant's local day,
 	// not UTC midnight (which would cut off orders before 05:00 Almaty).
-	almatyTZ, _ := time.LoadLocation("Asia/Almaty")
-	now := time.Now().In(almatyTZ).Truncate(24 * time.Hour)
+	now := timezone.Now().Truncate(24 * time.Hour)
 	rangeStart := now
 	rangeEnd := now.AddDate(0, 0, 1) // exclusive end for >= start AND < end
 	weekStart := now.AddDate(0, 0, -int(now.Weekday()))

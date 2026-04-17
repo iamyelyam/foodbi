@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/foodbi/backend/internal/iiko"
+	"github.com/foodbi/backend/internal/timezone"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
@@ -269,7 +270,7 @@ func (s *Service) SyncRevenue(ctx context.Context, client *iiko.Client, companyI
 	}
 	start := time.Now()
 
-	almatyTZ, _ := time.LoadLocation("Asia/Almaty")
+	almatyTZ := timezone.Almaty()
 	dateTo := time.Now().In(almatyTZ).Format("2006-01-02")
 	dateFrom := time.Date(2026, 1, 1, 0, 0, 0, 0, almatyTZ).Format("2006-01-02")
 
@@ -341,7 +342,7 @@ func (s *Service) SyncRevenue(ctx context.Context, client *iiko.Client, companyI
 				Msg("sync: DEBUG upsert sample")
 			debugN++
 		}
-		almatyTZ4, _ := time.LoadLocation("Asia/Almaty")
+		almatyTZ4 := timezone.Almaty()
 		parsedDate, _ := time.ParseInLocation("2006-01-02T15:04:05", agg.OrderDate, almatyTZ4)
 		if parsedDate.IsZero() {
 			parsedDate, _ = time.ParseInLocation("2006-01-02T15:04:05.000", agg.OrderDate, almatyTZ4)
@@ -380,7 +381,7 @@ func (s *Service) SyncProductSales(ctx context.Context, client *iiko.Client, com
 	}
 	start := time.Now()
 
-	almatyTZ2, _ := time.LoadLocation("Asia/Almaty")
+	almatyTZ2 := timezone.Almaty()
 	dateTo := time.Now().In(almatyTZ2).Format("2006-01-02")
 	dateFrom := time.Date(2026, 1, 1, 0, 0, 0, 0, almatyTZ2).Format("2006-01-02")
 
@@ -463,7 +464,7 @@ func (s *Service) SyncPurchases(ctx context.Context, client *iiko.Client, compan
 	}
 	start := time.Now()
 
-	almatyTZ3, _ := time.LoadLocation("Asia/Almaty")
+	almatyTZ3 := timezone.Almaty()
 	dateFrom := time.Now().In(almatyTZ3).AddDate(0, 0, -30).Format("2006-01-02")
 	dateTo := time.Now().In(almatyTZ3).Format("2006-01-02")
 
