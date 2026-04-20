@@ -25,12 +25,30 @@ var (
 	ErrSessionExpired = errors.New("session expired")
 )
 
-type Service struct {
-	db *pgxpool.Pool
+// EmailEnqueuer is the minimal surface the auth service needs to schedule
+// transactional emails inside an existing pgx.Tx. Implemented by *email.Client.
+// Defined here (not imported) to avoid a circular package dependency and to
+// keep the service unit-testable via a fake.
+type EmailEnqueuer interface {
+	EnqueueOTP(ctx context.Context, tx pgx.Tx, user *models.User, code string) error
+	EnqueuePasswordReset(ctx context.Context, tx pgx.Tx, user *models.User, token, resetURL string) error
+	EnqueueInvite(ctx context.Context, tx pgx.Tx, companyID uuid.UUID, toEmail, role, companyName, lang, acceptURL string) error
 }
 
-func NewService(db *pgxpool.Pool) *Service {
-	return &Service{db: db}
+type Service struct {
+	db      *pgxpool.Pool
+	emails  EmailEnqueuer
+	appURL  string
+}
+
+// NewService constructs the auth service. emails may be nil in tests; when nil,
+// email-enqueue calls are skipped (no-op). appURL is the public base URL used
+// to build password-reset / invite links — defaults to http://localhost:5173.
+func NewService(db *pgxpool.Pool, emails EmailEnqueuer, appURL string) *Service {
+	if appURL == "" {
+		appURL = "http://localhost:5173"
+	}
+	return &Service{db: db, emails: emails, appURL: appURL}
 }
 
 // jwtSecret returns the JWT signing secret from env. In production (ENV=production),
@@ -133,11 +151,19 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (*models.Us
 		return nil, fmt.Errorf("insert user: %w", err)
 	}
 
+	// Enqueue OTP email inside the same tx. If this fails, the whole
+	// registration rolls back — a user with no way to verify their email is
+	// worse than a clean failure they can retry.
+	if s.emails != nil {
+		if err := s.emails.EnqueueOTP(ctx, tx, user, otp); err != nil {
+			return nil, fmt.Errorf("enqueue otp email: %w", err)
+		}
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit: %w", err)
 	}
 
-	// SECURITY: In production, send OTP via email, never return in response
 	return user, nil
 }
 
@@ -274,20 +300,47 @@ func (s *Service) generateTokenPair(ctx context.Context, user *models.User) (*To
 	}, nil
 }
 
-// CreateInvite generates an invite token for a new employee.
+// CreateInvite generates an invite token for a new employee and enqueues the
+// invite email atomically with the invite row insert.
 func (s *Service) CreateInvite(ctx context.Context, companyID, createdBy uuid.UUID, email, role string) (string, error) {
 	token := uuid.New().String()
 	expiresAt := time.Now().Add(7 * 24 * time.Hour)
 
-	_, err := s.db.Exec(ctx,
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return "", fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx,
 		`INSERT INTO invites (id, company_id, email, role, token, created_by, expires_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		uuid.New(), companyID, email, role, token, createdBy, expiresAt)
-	if err != nil {
+		uuid.New(), companyID, email, role, token, createdBy, expiresAt); err != nil {
 		return "", fmt.Errorf("create invite: %w", err)
+	}
+
+	if s.emails != nil {
+		var companyName string
+		if err := tx.QueryRow(ctx, `SELECT name FROM companies WHERE id = $1`, companyID).Scan(&companyName); err != nil {
+			// Non-fatal for enqueue: fall back to empty name.
+			companyName = ""
+		}
+		acceptURL := fmt.Sprintf("%s/accept-invite?token=%s", s.appURL, token)
+		if err := s.emails.EnqueueInvite(ctx, tx, companyID, email, role, companyName, DefaultEmailLang, acceptURL); err != nil {
+			return "", fmt.Errorf("enqueue invite email: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return "", fmt.Errorf("commit: %w", err)
 	}
 	return token, nil
 }
+
+// DefaultEmailLang is the language used for invites before the invitee has an
+// account (and therefore no preferred_language yet). Matches the project's
+// Russian-speaking audience.
+const DefaultEmailLang = "ru"
 
 // AcceptInvite registers a user from an invite token.
 func (s *Service) AcceptInvite(ctx context.Context, token, password, firstName, lastName string) (*TokenPair, error) {
@@ -350,19 +403,51 @@ func (s *Service) AcceptInvite(ctx context.Context, token, password, firstName, 
 	return s.generateTokenPair(ctx, user)
 }
 
-// ForgotPassword generates a reset token.
+// ForgotPassword generates a reset token and enqueues the reset-link email
+// atomically with the token write. If the email doesn't exist we return nil
+// silently to avoid account enumeration.
 func (s *Service) ForgotPassword(ctx context.Context, email string) error {
 	token := uuid.New().String()
 	expires := time.Now().Add(1 * time.Hour)
 
-	tag, err := s.db.Exec(ctx,
-		"UPDATE users SET reset_token = $1, reset_token_expires = $2, updated_at = NOW() WHERE email = $3",
-		token, expires, email)
-	if err != nil || tag.RowsAffected() == 0 {
-		// SECURITY: don't reveal if email exists
-		return nil
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
 	}
-	// In production: send email with reset link containing token
+	defer tx.Rollback(ctx)
+
+	// Load the user so we can address the email with their first name. Using
+	// the same tx means if they are deleted mid-flight we don't enqueue a
+	// dangling email.
+	var user models.User
+	err = tx.QueryRow(ctx,
+		`SELECT id, company_id, email, first_name, last_name, role, is_active
+		 FROM users WHERE email = $1`,
+		email).Scan(&user.ID, &user.CompanyID, &user.Email, &user.FirstName, &user.LastName, &user.Role, &user.IsActive)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// SECURITY: don't reveal whether the email exists.
+			return nil
+		}
+		return fmt.Errorf("lookup user: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx,
+		"UPDATE users SET reset_token = $1, reset_token_expires = $2, updated_at = NOW() WHERE id = $3",
+		token, expires, user.ID); err != nil {
+		return fmt.Errorf("write reset token: %w", err)
+	}
+
+	if s.emails != nil {
+		resetURL := fmt.Sprintf("%s/reset-password?token=%s", s.appURL, token)
+		if err := s.emails.EnqueuePasswordReset(ctx, tx, &user, token, resetURL); err != nil {
+			return fmt.Errorf("enqueue reset email: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
 	return nil
 }
 

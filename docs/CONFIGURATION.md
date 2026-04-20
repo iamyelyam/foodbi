@@ -66,11 +66,20 @@ Source: `backend/internal/files/handler.go`
 
 Source: `backend/.env.example`
 
-### OTP / email delivery
+### Email (Resend)
 
-OTP codes are generated on registration and password-reset flows. The auth service contains a comment: "In production, send OTP via email, never return in response." No SMTP or email-provider environment variables are currently wired in the source — email sending is a **pending implementation**.
+Transactional email (OTP, password-reset, invite) is delivered via [Resend](https://resend.com) using an outbox pattern: the auth flows `INSERT` a row into `email_outbox` inside their existing DB transaction, and a background processor in the API replica that holds the advisory lock (`dblock.EmailOutboxProcessor`) drains the queue and calls the Resend REST API.
 
-<!-- VERIFY: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD or equivalent email provider vars are not present in backend source as of this writing. Add them here once the email delivery feature is implemented. -->
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `RESEND_API_KEY` | **Required in production** | _(none)_ | Resend API key (`re_…`). If unset in production the API server fails to start. If unset in development the processor logs a warning and runs in **dry-run mode** — rows are enqueued and the processor marks them `dry_run_skipped` without calling Resend. |
+| `EMAIL_FROM` | Optional | `noreply@foodbi.local` | Sender address. Must be a verified sending domain in your Resend account before going live. |
+| `EMAIL_FROM_NAME` | Optional | `FoodBI` | Display name that precedes the sender address in the `From` header (e.g. `FoodBI <noreply@foodbi.local>`). |
+| `APP_URL` | Optional | `http://localhost:5173` | Public base URL of the frontend; used to build password-reset and invite acceptance links in email templates. |
+
+Templates are embedded Go `html/template` strings (see `backend/internal/email/templates.go`) with Russian (`ru`) and English (`en`) variants; the default language is Russian, matching the target audience.
+
+Source: `backend/internal/email/`, `backend/cmd/api/main.go`
 
 ---
 
