@@ -78,15 +78,12 @@ func main() {
 	defer dashCache.Close()
 
 	// Email (Resend) — Phase 6.
-	// RESEND_API_KEY is required in production and fails fast if missing; in
-	// development an empty key puts the client in dry-run mode (rows are
+	// When RESEND_API_KEY is absent the client runs in dry-run mode: rows get
 	// enqueued and the processor marks them 'dry_run_skipped' without calling
-	// out to Resend). EMAIL_FROM / EMAIL_FROM_NAME default to a local sentinel
-	// the operator must replace before going live.
+	// Resend. This is currently acceptable in production too — email delivery
+	// is a Phase 6 nice-to-have, not a blocker for the core analytics flow.
+	// Flip this to a Fatal once email is business-critical.
 	resendKey := os.Getenv("RESEND_API_KEY")
-	if resendKey == "" && os.Getenv("ENV") == "production" {
-		log.Fatal().Msg("RESEND_API_KEY is required in production")
-	}
 	if resendKey == "" {
 		log.Warn().Msg("RESEND_API_KEY not set — email processor will run in dry-run mode")
 	}
