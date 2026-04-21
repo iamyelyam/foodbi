@@ -128,9 +128,26 @@ export function AddLocationPage() {
     const elapsed = Date.now() - syncStartTime
     const remaining = Math.max(0, 5000 - elapsed)
     setDisplayProgress(100)
+
+    // Drop all cached (empty) query results so the user lands on fresh data.
+    // Before this, dashboard/revenue/purchases/stock queries were fetched
+    // before sync started and cached their empty state; navigating there after
+    // "Готово" showed zeros until the cache's 2-min TTL expired.
+    queryClient.invalidateQueries({ queryKey: ['locations'] })
+    queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    queryClient.invalidateQueries({ queryKey: ['revenue-trend'] })
+    queryClient.invalidateQueries({ queryKey: ['orders'] })
+    queryClient.invalidateQueries({ queryKey: ['products'] })
+    queryClient.invalidateQueries({ queryKey: ['purchases'] })
+    queryClient.invalidateQueries({ queryKey: ['stock'] })
+    queryClient.invalidateQueries({ queryKey: ['low-stock'] })
+    queryClient.invalidateQueries({ queryKey: ['stats-revenue'] })
+    queryClient.invalidateQueries({ queryKey: ['stats-profit'] })
+    queryClient.invalidateQueries({ queryKey: ['suppliers'] })
+
     const timeout = setTimeout(() => setShowDoneScreen(true), remaining + 500)
     return () => clearTimeout(timeout)
-  }, [reallyDone, step, syncStartTime])
+  }, [reallyDone, step, syncStartTime, queryClient])
 
   const progressPercent = displayProgress
   const allDone = showDoneScreen
