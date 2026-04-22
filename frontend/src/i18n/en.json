@@ -244,6 +244,7 @@
     "iikoPasswordPh": "Leave empty to keep current",
     "posConfig": "POS Configuration",
     "posConfigDesc": "Enter the credentials for your POS system to sync data",
+    "iikoCloudDetected": "Detected iikoweb (iiko Cloud). Use the API Login from the admin panel instead of a password.",
     "login": "Login",
     "password": "Password",
     "credentialsPh": "Leave empty to keep current",

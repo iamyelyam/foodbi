@@ -244,6 +244,7 @@
     "iikoPasswordPh": "Dejar vacío para mantener actual",
     "posConfig": "Configuración del TPV",
     "posConfigDesc": "Introduce las credenciales de tu sistema TPV para sincronizar datos",
+    "iikoCloudDetected": "Detectado iikoweb (iiko Cloud). Usa el API Login del panel de administración en lugar de una contraseña.",
     "login": "Usuario",
     "password": "Contraseña",
     "credentialsPh": "Dejar vacío para mantener actual",

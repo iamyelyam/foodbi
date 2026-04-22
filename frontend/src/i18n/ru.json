@@ -244,6 +244,7 @@
     "iikoPasswordPh": "Оставьте пустым, если не менять",
     "posConfig": "Настройки кассы",
     "posConfigDesc": "Введите данные вашей кассовой системы для синхронизации",
+    "iikoCloudDetected": "Определён iikoweb (iiko Cloud). Вместо пароля укажите API Login из админки.",
     "login": "Логин",
     "password": "Пароль",
     "credentialsPh": "Оставьте пустым, если не менять",

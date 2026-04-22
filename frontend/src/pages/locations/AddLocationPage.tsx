@@ -6,7 +6,7 @@ import { Header } from '@/components/layout/Header'
 import { ProgressBar } from '@/components/ui/progress-bar'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
-import { POS_SYSTEMS, findPosLabel } from '@/lib/posSystems'
+import { POS_SYSTEMS, findPosLabel, isIikoCloudUrl } from '@/lib/posSystems'
 import { useT } from '@/i18n'
 
 type Step = 'info' | 'config' | 'syncing'
@@ -36,12 +36,21 @@ export function AddLocationPage() {
 
   const step1Valid = !!posSystem
 
+  // When user picked "iiko" and typed a URL matching iikoweb.ru / Cloud API,
+  // silently switch into iiko Cloud mode: different form, different endpoint,
+  // different persisted pos_system value.
+  const effectivePosSystem = posSystem === 'iiko' && isIikoCloudUrl(field1)
+    ? 'iiko_cloud'
+    : posSystem
+
   // Each POS defines which fields are required for validation
-  const configValid = posSystem === 'iiko'
+  const configValid = effectivePosSystem === 'iiko'
     ? field1.length > 10 && field2.trim().length > 0 && field3.length > 0
-    : posSystem === 'numier'
-      ? field1.trim().length > 10
-      : false
+    : effectivePosSystem === 'iiko_cloud'
+      ? field1.length > 10 && field2.trim().length > 10
+      : effectivePosSystem === 'numier'
+        ? field1.trim().length > 10
+        : false
 
   // Create location
   const createMutation = useMutation({
@@ -60,11 +69,16 @@ export function AddLocationPage() {
     mutationFn: (locId: string) => api.post(`/locations/${locId}/sync`),
   })
 
-  // Save POS config — backend endpoint chosen by posSystem
+  // Save POS config — backend endpoint chosen by effective (post-autodetect) POS
   const configMutation = useMutation({
     mutationFn: () => {
-      if (posSystem === 'numier') {
+      if (effectivePosSystem === 'numier') {
         return api.put('/locations/numier-config', { numier_api_key: field1.trim() })
+      }
+      if (effectivePosSystem === 'iiko_cloud') {
+        return api.put('/locations/iiko-cloud-config', {
+          iiko_cloud_api_login: field2.trim(),
+        })
       }
       return api.put('/locations/iiko-config', {
         iiko_server_url: field1.trim(),
@@ -171,10 +185,10 @@ export function AddLocationPage() {
 
   const handleConfigSubmit = () => {
     createMutation.mutate({
-      name: name.trim() || findPosLabel(posSystem),
+      name: name.trim() || findPosLabel(effectivePosSystem),
       city: city.trim(),
       address: address.trim(),
-      pos_system: posSystem,
+      pos_system: effectivePosSystem,
     })
   }
 
@@ -223,7 +237,7 @@ export function AddLocationPage() {
               <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setShowPosSheet(false)} />
               <div className="fixed bottom-0 inset-x-0 bg-white rounded-t-[24px] z-50 p-4 pb-8 space-y-2">
                 <p className="text-base font-bold text-dark mb-2 text-center">{t('locations.posSystemLabel')}</p>
-                {POS_SYSTEMS.map((opt) => (
+                {POS_SYSTEMS.filter((opt) => !opt.hidden).map((opt) => (
                   <button
                     key={opt.id}
                     disabled={!opt.enabled}
@@ -257,11 +271,16 @@ export function AddLocationPage() {
               {t('locations.posConfigDesc')}
             </p>
             <PosConfigFields
-              posSystem={posSystem}
+              posSystem={effectivePosSystem}
               field1={field1} setField1={setField1}
               field2={field2} setField2={setField2}
               field3={field3} setField3={setField3}
             />
+            {effectivePosSystem === 'iiko_cloud' && (
+              <p className="text-xs text-primary bg-primary-lighter rounded-[10px] px-3 py-2">
+                {t('locations.iikoCloudDetected')}
+              </p>
+            )}
 
             {(createMutation.isError || configMutation.isError) && (
               <p className="text-sm text-danger text-center pt-2">
@@ -370,7 +389,20 @@ function PosConfigFields({
   if (posSystem === 'numier') {
     return <FilledInput placeholder="API Key" value={field1} onChange={setField1} />
   }
-  // iiko (default)
+  if (posSystem === 'iiko_cloud') {
+    // Cloud-hosted iiko (iikoweb.ru). Credentials differ from Server API:
+    // no login/password, only an apiLogin UUID issued in the iikoweb admin.
+    return (
+      <>
+        <FilledInput placeholder="https://your-restaurant.iikoweb.ru" value={field1} onChange={setField1} />
+        <FilledInput placeholder="API Login (UUID)" value={field2} onChange={setField2} />
+        <p className="text-xs text-gray px-1">
+          iikoweb → Администрирование → Пользователи → API Login
+        </p>
+      </>
+    )
+  }
+  // iiko Server (default)
   return (
     <>
       <FilledInput placeholder="Server URL (https://...)" value={field1} onChange={setField1} />
