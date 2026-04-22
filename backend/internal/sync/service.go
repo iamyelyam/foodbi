@@ -523,10 +523,12 @@ func (s *Service) SyncPurchases(ctx context.Context, client *iiko.Client, compan
 					}
 				}
 				unit = ResolveUnit(unit, productName, measureUnits)
-				_, _ = s.db.Exec(ctx,
-					`INSERT INTO purchase_line_items (purchase_id, product_code, product_name, unit, quantity, price, subtotal)
-					 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-					purchaseRowID, item.Code, productName, unit, item.Amount, item.Price, item.Sum)
+				if _, err := s.db.Exec(ctx,
+					`INSERT INTO purchase_line_items (company_id, purchase_id, product_code, product_name, unit, quantity, price, subtotal)
+					 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+					companyID, purchaseRowID, item.Code, productName, unit, item.Amount, item.Price, item.Sum); err != nil {
+					log.Warn().Err(err).Str("purchase", purchaseRowID.String()).Msg("sync: insert purchase_line_item failed")
+				}
 			}
 		}
 

@@ -151,9 +151,9 @@ func (h *Handler) CreateTransfer(w http.ResponseWriter, r *http.Request) {
 
 	for i, item := range input.Items {
 		_, err = tx.Exec(r.Context(),
-			`INSERT INTO transfer_request_items (id, request_id, product_name, category, quantity, unit, sort_order)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-			uuid.New(), id, item.ProductName, item.Category, item.Quantity, item.Unit, i)
+			`INSERT INTO transfer_request_items (id, company_id, request_id, product_name, category, quantity, unit, sort_order)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+			uuid.New(), companyID, id, item.ProductName, item.Category, item.Quantity, item.Unit, i)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to add item")
 			return
