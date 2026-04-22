@@ -21,6 +21,7 @@ import (
 	"github.com/foodbi/backend/internal/files"
 	"github.com/foodbi/backend/internal/locations"
 	"github.com/foodbi/backend/internal/middleware"
+	"github.com/foodbi/backend/internal/iikocloudsync"
 	"github.com/foodbi/backend/internal/numiersync"
 	gosync "github.com/foodbi/backend/internal/sync"
 	"github.com/foodbi/backend/internal/notifications"
@@ -111,7 +112,8 @@ func main() {
 	authHandler := auth.NewHandler(authService)
 	syncService := gosync.NewService(db)
 	numierSyncSvc := numiersync.NewService(db)
-	locHandler := locations.NewHandler(db, syncService, numierSyncSvc)
+	iikoCloudSyncSvc := iikocloudsync.NewService(db)
+	locHandler := locations.NewHandler(db, syncService, numierSyncSvc, iikoCloudSyncSvc)
 	dashHandler := dashboard.NewHandler(db, dashCache)
 	revHandler := revenue.NewHandler(db)
 	purchHandler := purchases.NewHandler(db)
