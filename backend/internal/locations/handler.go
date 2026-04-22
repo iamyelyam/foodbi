@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/foodbi/backend/internal/iiko"
+	"github.com/foodbi/backend/internal/iikocloud"
+	"github.com/foodbi/backend/internal/iikocloudsync"
 	"github.com/foodbi/backend/internal/middleware"
 	"github.com/foodbi/backend/internal/numier"
 	"github.com/foodbi/backend/internal/numiersync"
@@ -22,13 +24,14 @@ import (
 var validate = validator.New()
 
 type Handler struct {
-	db               *pgxpool.Pool
-	syncService      *gosync.Service
-	numierSyncService *numiersync.Service
+	db                   *pgxpool.Pool
+	syncService          *gosync.Service
+	numierSyncService    *numiersync.Service
+	iikoCloudSyncService *iikocloudsync.Service
 }
 
-func NewHandler(db *pgxpool.Pool, syncService *gosync.Service, numierSyncService *numiersync.Service) *Handler {
-	return &Handler{db: db, syncService: syncService, numierSyncService: numierSyncService}
+func NewHandler(db *pgxpool.Pool, syncService *gosync.Service, numierSyncService *numiersync.Service, iikoCloudSyncService *iikocloudsync.Service) *Handler {
+	return &Handler{db: db, syncService: syncService, numierSyncService: numierSyncService, iikoCloudSyncService: iikoCloudSyncService}
 }
 
 func (h *Handler) Routes() chi.Router {
@@ -41,6 +44,8 @@ func (h *Handler) Routes() chi.Router {
 	r.Put("/iiko-config", h.SetIikoConfig)
 	r.Get("/numier-config", h.GetNumierConfig)
 	r.Put("/numier-config", h.SetNumierConfig)
+	r.Get("/iiko-cloud-config", h.GetIikoCloudConfig)
+	r.Put("/iiko-cloud-config", h.SetIikoCloudConfig)
 	r.Get("/sync-status", h.SyncStatus)
 	r.Post("/{id}/sync", h.TriggerSync)
 	return r
@@ -164,6 +169,66 @@ func (h *Handler) SetNumierConfig(w http.ResponseWriter, r *http.Request) {
 		input.APIKey, companyID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to save numier config")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
+}
+
+// GetIikoCloudConfig returns whether an iiko Cloud API login is configured.
+// GET /api/v1/locations/iiko-cloud-config
+func (h *Handler) GetIikoCloudConfig(w http.ResponseWriter, r *http.Request) {
+	companyID := middleware.GetCompanyID(r.Context())
+
+	var apiLogin *string
+	err := h.db.QueryRow(r.Context(),
+		`SELECT iiko_cloud_api_login FROM companies WHERE id = $1`, companyID).
+		Scan(&apiLogin)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]string{})
+		return
+	}
+
+	result := map[string]string{}
+	if apiLogin != nil && len(*apiLogin) > 0 {
+		result["iiko_cloud_api_login_set"] = "true"
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// SetIikoCloudConfig saves the iiko Cloud API login on the company record.
+// PUT /api/v1/locations/iiko-cloud-config
+func (h *Handler) SetIikoCloudConfig(w http.ResponseWriter, r *http.Request) {
+	role := middleware.GetRole(r.Context())
+	if role != "owner" {
+		writeError(w, http.StatusForbidden, "only owners can configure iiko Cloud")
+		return
+	}
+
+	var input struct {
+		APILogin string `json:"iiko_cloud_api_login"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if input.APILogin == "" {
+		writeError(w, http.StatusBadRequest, "iiko_cloud_api_login is required")
+		return
+	}
+
+	// Validate the API login by authenticating with iiko Cloud.
+	client := iikocloud.NewClient(input.APILogin)
+	if err := client.Authenticate(r.Context()); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid iiko Cloud API login: "+err.Error())
+		return
+	}
+
+	companyID := middleware.GetCompanyID(r.Context())
+	_, err := h.db.Exec(r.Context(),
+		`UPDATE companies SET iiko_cloud_api_login = $1, updated_at = NOW() WHERE id = $2`,
+		input.APILogin, companyID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to save iiko Cloud config")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
@@ -422,8 +487,8 @@ func (h *Handler) TriggerSync(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Route to the correct POS sync based on location's pos_system
-	if posSystem != nil && *posSystem == "numier" {
-		// NUMIER sync
+	switch {
+	case posSystem != nil && *posSystem == "numier":
 		var apiKey string
 		err = h.db.QueryRow(r.Context(),
 			`SELECT numier_api_key FROM companies
@@ -434,8 +499,21 @@ func (h *Handler) TriggerSync(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		go h.runNumierLocationSync(companyID, locationUUID, apiKey)
-	} else {
-		// iiko sync (default)
+
+	case posSystem != nil && *posSystem == "iiko_cloud":
+		var apiLogin string
+		err = h.db.QueryRow(r.Context(),
+			`SELECT iiko_cloud_api_login FROM companies
+			 WHERE id = $1 AND iiko_cloud_api_login IS NOT NULL AND iiko_cloud_api_login != ''`,
+			companyID).Scan(&apiLogin)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "iiko Cloud not configured for this company")
+			return
+		}
+		go h.runIikoCloudLocationSync(companyID, locationUUID, apiLogin)
+
+	default:
+		// iiko Server sync (default)
 		var iikoURL, iikoLogin, iikoPassword string
 		err = h.db.QueryRow(r.Context(),
 			`SELECT iiko_server_url, iiko_login, iiko_password FROM companies
@@ -622,6 +700,72 @@ func (h *Handler) runNumierLocationSync(companyID, locationID uuid.UUID, apiKey 
 	}
 
 	l.Info().Msg("numier-trigger: location sync complete")
+}
+
+// runIikoCloudLocationSync runs a full iiko Cloud sync for a single location.
+func (h *Handler) runIikoCloudLocationSync(companyID, locationID uuid.UUID, apiLogin string) {
+	ctx := context.Background()
+	logger := log.With().Str("company", companyID.String()).Str("pos", "iiko_cloud").Logger()
+
+	client := iikocloud.NewClient(apiLogin)
+	if err := client.Authenticate(ctx); err != nil {
+		logger.Error().Err(err).Msg("iiko-cloud-trigger: auth failed")
+		return
+	}
+
+	// Get the iiko Cloud org ID for this location.
+	var orgID string
+	h.db.QueryRow(ctx,
+		`SELECT COALESCE(iiko_cloud_org_id, '') FROM locations WHERE id = $1`, locationID).Scan(&orgID)
+
+	if orgID == "" {
+		// Try to discover and map organizations.
+		locations, err := h.iikoCloudSyncService.DiscoverAndMapOrganizations(ctx, client, companyID)
+		if err != nil {
+			logger.Error().Err(err).Msg("iiko-cloud-trigger: discover organizations failed")
+			return
+		}
+		for _, loc := range locations {
+			if loc.LocationID == locationID {
+				orgID = loc.IikoCloudOrgID
+				break
+			}
+		}
+		if orgID == "" {
+			logger.Error().Str("location", locationID.String()).Msg("iiko-cloud-trigger: no org ID found for location")
+			return
+		}
+	}
+
+	l := logger.With().Str("location", locationID.String()).Str("org_id", orgID).Logger()
+
+	if err := h.iikoCloudSyncService.SyncRevenue(ctx, client, companyID, locationID, orgID); err != nil {
+		l.Error().Err(err).Msg("iiko-cloud-trigger: revenue failed")
+	} else {
+		h.iikoCloudSyncService.ValidateRevenueAfterSync(ctx, companyID, locationID)
+	}
+
+	if err := h.iikoCloudSyncService.SyncProductSales(ctx, client, companyID, locationID, orgID); err != nil {
+		l.Error().Err(err).Msg("iiko-cloud-trigger: product_sales failed")
+	}
+
+	if err := h.iikoCloudSyncService.SyncPurchases(ctx, client, companyID, locationID, orgID); err != nil {
+		l.Error().Err(err).Msg("iiko-cloud-trigger: purchases failed")
+	}
+
+	if err := h.iikoCloudSyncService.SyncStock(ctx, client, companyID, locationID, orgID); err != nil {
+		l.Error().Err(err).Msg("iiko-cloud-trigger: stock failed")
+	}
+
+	if err := h.iikoCloudSyncService.SyncRecipes(ctx, client, companyID, locationID, orgID); err != nil {
+		l.Error().Err(err).Msg("iiko-cloud-trigger: recipes failed")
+	}
+
+	if err := h.iikoCloudSyncService.RefreshDashboardViews(ctx); err != nil {
+		l.Warn().Err(err).Msg("iiko-cloud-trigger: dashboard refresh failed")
+	}
+
+	l.Info().Msg("iiko-cloud-trigger: location sync complete")
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {

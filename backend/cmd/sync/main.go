@@ -12,6 +12,8 @@ import (
 
 	"github.com/foodbi/backend/internal/database"
 	"github.com/foodbi/backend/internal/iiko"
+	"github.com/foodbi/backend/internal/iikocloud"
+	"github.com/foodbi/backend/internal/iikocloudsync"
 	"github.com/foodbi/backend/internal/numier"
 	"github.com/foodbi/backend/internal/numiersync"
 	gosync "github.com/foodbi/backend/internal/sync"
@@ -54,6 +56,7 @@ func main() {
 
 	syncService := gosync.NewService(db)
 	numierSyncService := numiersync.NewService(db)
+	iikoCloudSyncService := iikocloudsync.NewService(db)
 
 	// Circuit breaker: skip companies that failed auth 3 times in the last hour.
 	globalBreaker = gosync.NewCircuitBreaker(3, time.Hour)
@@ -111,9 +114,32 @@ func main() {
 		runNumierSync(ctx, numierSyncService, "recipes")
 	})
 
+	// === iiko Cloud tickers ===
+
+	go runTicker(ctx, 15*time.Minute, "iiko_cloud_revenue", func() {
+		runIikoCloudSync(ctx, iikoCloudSyncService, "revenue")
+	})
+
+	go runTicker(ctx, 15*time.Minute, "iiko_cloud_product_sales", func() {
+		runIikoCloudSync(ctx, iikoCloudSyncService, "product_sales")
+	})
+
+	go runTicker(ctx, 60*time.Minute, "iiko_cloud_purchases", func() {
+		runIikoCloudSync(ctx, iikoCloudSyncService, "purchases")
+	})
+
+	go runTicker(ctx, 30*time.Minute, "iiko_cloud_stock", func() {
+		runIikoCloudSync(ctx, iikoCloudSyncService, "stock")
+	})
+
+	go runTicker(ctx, 6*time.Hour, "iiko_cloud_recipes", func() {
+		runIikoCloudSync(ctx, iikoCloudSyncService, "recipes")
+	})
+
 	// Run initial syncs immediately
 	go runSync(ctx, syncService, "all")
 	go runNumierSync(ctx, numierSyncService, "all")
+	go runIikoCloudSync(ctx, iikoCloudSyncService, "all")
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -310,6 +336,124 @@ func runNumierSync(ctx context.Context, svc *numiersync.Service, syncType string
 	}
 
 	log.Info().Str("type", syncType).Int("companies", len(companies)).Int("workers", poolSize).Msg("numier-sync: cycle complete")
+}
+
+// runIikoCloudSync processes all iiko Cloud companies using a worker pool.
+func runIikoCloudSync(ctx context.Context, svc *iikocloudsync.Service, syncType string) {
+	companies, err := svc.GetCompaniesToSync(ctx)
+	if err != nil {
+		log.Error().Err(err).Msg("iiko-cloud-sync: failed to get companies")
+		return
+	}
+
+	if len(companies) == 0 {
+		log.Debug().Msg("iiko-cloud-sync: no companies with iiko_cloud configured")
+		return
+	}
+
+	poolSize := workerPoolSize()
+	if poolSize > len(companies) {
+		poolSize = len(companies)
+	}
+
+	jobs := make(chan iikocloudsync.CompanySync, len(companies))
+	var wg sync.WaitGroup
+
+	for i := 0; i < poolSize; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for company := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				syncOneIikoCloudCompany(ctx, svc, company, syncType, workerID)
+			}
+		}(i)
+	}
+
+	for _, company := range companies {
+		jobs <- company
+	}
+	close(jobs)
+
+	wg.Wait()
+
+	if err := svc.RefreshDashboardViews(ctx); err != nil {
+		log.Warn().Err(err).Msg("iiko-cloud-sync: dashboard view refresh failed")
+	}
+
+	log.Info().Str("type", syncType).Int("companies", len(companies)).Int("workers", poolSize).Msg("iiko-cloud-sync: cycle complete")
+}
+
+func syncOneIikoCloudCompany(ctx context.Context, svc *iikocloudsync.Service, company iikocloudsync.CompanySync, syncType string, workerID int) {
+	client := iikocloud.NewClient(company.APILogin)
+
+	if err := client.Authenticate(ctx); err != nil {
+		log.Error().Err(err).
+			Str("company", company.CompanyID.String()).
+			Int("worker", workerID).
+			Msg("iiko-cloud-sync: auth failed")
+		return
+	}
+
+	locations, err := svc.DiscoverAndMapOrganizations(ctx, client, company.CompanyID)
+	if err != nil {
+		log.Error().Err(err).
+			Str("company", company.CompanyID.String()).
+			Int("worker", workerID).
+			Msg("iiko-cloud-sync: discover organizations failed")
+		locations = company.Locations
+	}
+
+	for _, loc := range locations {
+		if ctx.Err() != nil {
+			return
+		}
+		if loc.IikoCloudOrgID == "" {
+			log.Warn().Str("location", loc.Name).Msg("iiko-cloud-sync: skipping location without org ID")
+			continue
+		}
+
+		logger := log.With().
+			Str("company", company.CompanyID.String()).
+			Str("location", loc.Name).
+			Str("org_id", loc.IikoCloudOrgID).
+			Int("worker", workerID).
+			Logger()
+
+		if syncType == "all" || syncType == "revenue" {
+			if err := svc.SyncRevenue(ctx, client, company.CompanyID, loc.LocationID, loc.IikoCloudOrgID); err != nil {
+				logger.Error().Err(err).Msg("iiko-cloud-sync: revenue failed")
+			} else {
+				svc.ValidateRevenueAfterSync(ctx, company.CompanyID, loc.LocationID)
+			}
+		}
+
+		if syncType == "all" || syncType == "product_sales" {
+			if err := svc.SyncProductSales(ctx, client, company.CompanyID, loc.LocationID, loc.IikoCloudOrgID); err != nil {
+				logger.Error().Err(err).Msg("iiko-cloud-sync: product_sales failed")
+			}
+		}
+
+		if syncType == "all" || syncType == "purchases" {
+			if err := svc.SyncPurchases(ctx, client, company.CompanyID, loc.LocationID, loc.IikoCloudOrgID); err != nil {
+				logger.Error().Err(err).Msg("iiko-cloud-sync: purchases failed")
+			}
+		}
+
+		if syncType == "all" || syncType == "stock" {
+			if err := svc.SyncStock(ctx, client, company.CompanyID, loc.LocationID, loc.IikoCloudOrgID); err != nil {
+				logger.Error().Err(err).Msg("iiko-cloud-sync: stock failed")
+			}
+		}
+
+		if syncType == "all" || syncType == "recipes" {
+			if err := svc.SyncRecipes(ctx, client, company.CompanyID, loc.LocationID, loc.IikoCloudOrgID); err != nil {
+				logger.Error().Err(err).Msg("iiko-cloud-sync: recipes failed")
+			}
+		}
+	}
 }
 
 func syncOneNumierCompany(ctx context.Context, svc *numiersync.Service, company numiersync.CompanySync, syncType string, workerID int) {
