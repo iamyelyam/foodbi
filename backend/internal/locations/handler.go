@@ -9,6 +9,8 @@ import (
 	"github.com/foodbi/backend/internal/iiko"
 	"github.com/foodbi/backend/internal/iikocloud"
 	"github.com/foodbi/backend/internal/iikocloudsync"
+	"github.com/foodbi/backend/internal/iikoweb"
+	"github.com/foodbi/backend/internal/iikowebsync"
 	"github.com/foodbi/backend/internal/middleware"
 	"github.com/foodbi/backend/internal/numier"
 	"github.com/foodbi/backend/internal/numiersync"
@@ -28,10 +30,11 @@ type Handler struct {
 	syncService          *gosync.Service
 	numierSyncService    *numiersync.Service
 	iikoCloudSyncService *iikocloudsync.Service
+	iikoWebSyncService   *iikowebsync.Service
 }
 
-func NewHandler(db *pgxpool.Pool, syncService *gosync.Service, numierSyncService *numiersync.Service, iikoCloudSyncService *iikocloudsync.Service) *Handler {
-	return &Handler{db: db, syncService: syncService, numierSyncService: numierSyncService, iikoCloudSyncService: iikoCloudSyncService}
+func NewHandler(db *pgxpool.Pool, syncService *gosync.Service, numierSyncService *numiersync.Service, iikoCloudSyncService *iikocloudsync.Service, iikoWebSyncService *iikowebsync.Service) *Handler {
+	return &Handler{db: db, syncService: syncService, numierSyncService: numierSyncService, iikoCloudSyncService: iikoCloudSyncService, iikoWebSyncService: iikoWebSyncService}
 }
 
 func (h *Handler) Routes() chi.Router {
@@ -46,6 +49,8 @@ func (h *Handler) Routes() chi.Router {
 	r.Put("/numier-config", h.SetNumierConfig)
 	r.Get("/iiko-cloud-config", h.GetIikoCloudConfig)
 	r.Put("/iiko-cloud-config", h.SetIikoCloudConfig)
+	r.Get("/iikoweb-config", h.GetIikoWebConfig)
+	r.Put("/iikoweb-config", h.SetIikoWebConfig)
 	r.Get("/sync-status", h.SyncStatus)
 	r.Post("/{id}/sync", h.TriggerSync)
 	return r
@@ -229,6 +234,81 @@ func (h *Handler) SetIikoCloudConfig(w http.ResponseWriter, r *http.Request) {
 		input.APILogin, companyID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to save iiko Cloud config")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
+}
+
+// GetIikoWebConfig returns whether iikoWeb credentials are configured (password masked).
+// GET /api/v1/locations/iikoweb-config
+func (h *Handler) GetIikoWebConfig(w http.ResponseWriter, r *http.Request) {
+	companyID := middleware.GetCompanyID(r.Context())
+
+	var url, login, password *string
+	err := h.db.QueryRow(r.Context(),
+		`SELECT iikoweb_url, iikoweb_login, iikoweb_password FROM companies WHERE id = $1`, companyID).
+		Scan(&url, &login, &password)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]string{})
+		return
+	}
+
+	result := map[string]string{}
+	if url != nil {
+		result["iikoweb_url"] = *url
+	}
+	if login != nil {
+		result["iikoweb_login"] = *login
+	}
+	if password != nil && len(*password) > 0 {
+		result["iikoweb_password_set"] = "true"
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// SetIikoWebConfig saves iikoWeb credentials on the company record.
+// PUT /api/v1/locations/iikoweb-config
+// Body: { "iikoweb_url": "https://...", "iikoweb_login": "...", "iikoweb_password": "..." }
+// Validates the credentials by performing a live login against the tenant.
+func (h *Handler) SetIikoWebConfig(w http.ResponseWriter, r *http.Request) {
+	role := middleware.GetRole(r.Context())
+	if role != "owner" {
+		writeError(w, http.StatusForbidden, "only owners can configure iikoWeb")
+		return
+	}
+
+	var input struct {
+		URL      string `json:"iikoweb_url"`
+		Login    string `json:"iikoweb_login"`
+		Password string `json:"iikoweb_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if input.URL == "" || input.Login == "" || input.Password == "" {
+		writeError(w, http.StatusBadRequest, "iikoweb_url, iikoweb_login, iikoweb_password are all required")
+		return
+	}
+
+	// Validate by logging in against the tenant. This proves the URL resolves,
+	// the tenant speaks the expected REST surface, AND the credentials work.
+	client, err := iikoweb.NewClient(input.URL, input.Login, input.Password)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid iikoWeb config: "+err.Error())
+		return
+	}
+	if err := client.Authenticate(r.Context()); err != nil {
+		writeError(w, http.StatusBadRequest, "iikoWeb login rejected: "+err.Error())
+		return
+	}
+
+	companyID := middleware.GetCompanyID(r.Context())
+	_, err = h.db.Exec(r.Context(),
+		`UPDATE companies SET iikoweb_url = $1, iikoweb_login = $2, iikoweb_password = $3, updated_at = NOW() WHERE id = $4`,
+		input.URL, input.Login, input.Password, companyID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to save iikoWeb config")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
@@ -512,6 +592,20 @@ func (h *Handler) TriggerSync(w http.ResponseWriter, r *http.Request) {
 		}
 		go h.runIikoCloudLocationSync(companyID, locationUUID, apiLogin)
 
+	case posSystem != nil && *posSystem == "iikoweb":
+		var iwURL, iwLogin, iwPassword string
+		err = h.db.QueryRow(r.Context(),
+			`SELECT iikoweb_url, iikoweb_login, iikoweb_password FROM companies
+			 WHERE id = $1 AND iikoweb_url IS NOT NULL AND iikoweb_url != ''
+			   AND iikoweb_login IS NOT NULL AND iikoweb_login != ''
+			   AND iikoweb_password IS NOT NULL AND iikoweb_password != ''`,
+			companyID).Scan(&iwURL, &iwLogin, &iwPassword)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "iikoWeb not configured for this company")
+			return
+		}
+		go h.runIikoWebLocationSync(companyID, locationUUID, iwURL, iwLogin, iwPassword)
+
 	default:
 		// iiko Server sync (default)
 		var iikoURL, iikoLogin, iikoPassword string
@@ -766,6 +860,50 @@ func (h *Handler) runIikoCloudLocationSync(companyID, locationID uuid.UUID, apiL
 	}
 
 	l.Info().Msg("iiko-cloud-trigger: location sync complete")
+}
+
+// runIikoWebLocationSync verifies the session and runs all data syncs (currently stubs)
+// for a single iikoWeb location. Data sync methods are no-ops until iikoOffice submodule
+// endpoints are reverse-engineered under a live session.
+func (h *Handler) runIikoWebLocationSync(companyID, locationID uuid.UUID, iwURL, iwLogin, iwPassword string) {
+	ctx := context.Background()
+	logger := log.With().Str("company", companyID.String()).Str("pos", "iikoweb").Logger()
+
+	client, err := iikoweb.NewClient(iwURL, iwLogin, iwPassword)
+	if err != nil {
+		logger.Error().Err(err).Msg("iikoweb-trigger: create client failed")
+		return
+	}
+
+	stores, err := h.iikoWebSyncService.VerifySession(ctx, client)
+	if err != nil {
+		logger.Error().Err(err).Msg("iikoweb-trigger: session verification failed")
+		return
+	}
+	logger.Info().Int("stores", len(stores)).Msg("iikoweb-trigger: session verified")
+
+	var storeID string
+	h.db.QueryRow(ctx,
+		`SELECT COALESCE(iikoweb_store_id, '') FROM locations WHERE id = $1`, locationID).Scan(&storeID)
+
+	l := logger.With().Str("location", locationID.String()).Str("store_id", storeID).Logger()
+
+	if err := h.iikoWebSyncService.SyncRevenue(ctx, client, companyID, locationID, storeID); err != nil {
+		l.Error().Err(err).Msg("iikoweb-trigger: revenue failed")
+	}
+	if err := h.iikoWebSyncService.SyncProductSales(ctx, client, companyID, locationID, storeID); err != nil {
+		l.Error().Err(err).Msg("iikoweb-trigger: product_sales failed")
+	}
+	if err := h.iikoWebSyncService.SyncPurchases(ctx, client, companyID, locationID, storeID); err != nil {
+		l.Error().Err(err).Msg("iikoweb-trigger: purchases failed")
+	}
+	if err := h.iikoWebSyncService.SyncStock(ctx, client, companyID, locationID, storeID); err != nil {
+		l.Error().Err(err).Msg("iikoweb-trigger: stock failed")
+	}
+	if err := h.iikoWebSyncService.SyncRecipes(ctx, client, companyID, locationID, storeID); err != nil {
+		l.Error().Err(err).Msg("iikoweb-trigger: recipes failed")
+	}
+	l.Info().Msg("iikoweb-trigger: location sync complete (data methods currently stubs)")
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {

@@ -17,6 +17,7 @@ export interface PosSystemOption {
 export const POS_SYSTEMS: PosSystemOption[] = [
   { id: 'iiko', label: 'iiko', enabled: true },
   { id: 'iiko_cloud', label: 'iiko Cloud', enabled: true, hidden: true },
+  { id: 'iikoweb', label: 'iikoWeb', enabled: true, hidden: true },
   { id: 'numier', label: 'NUMIER', enabled: true },
   { id: 'r_keeper', label: 'r_keeper', enabled: false },
   { id: 'poster', label: 'Poster', enabled: false },

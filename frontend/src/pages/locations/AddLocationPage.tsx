@@ -30,27 +30,40 @@ export function AddLocationPage() {
   const [field2, setField2] = useState('')
   const [field3, setField3] = useState('')
 
+  // When the user enters an iikoweb.ru URL under the "iiko" POS, they have TWO
+  // valid integration paths (Cloud API via apiLogin, or direct iikoWeb REST via
+  // login+password). We surface the choice explicitly; null = choice pending.
+  const [iikoCloudOrWebChoice, setIikoCloudOrWebChoice] = useState<'iiko_cloud' | 'iikoweb' | null>(null)
+
   // Step 3: sync progress
   const [locationId, setLocationId] = useState<string>('')
   const [syncError, setSyncError] = useState('')
 
   const step1Valid = !!posSystem
 
-  // When user picked "iiko" and typed a URL matching iikoweb.ru / Cloud API,
-  // silently switch into iiko Cloud mode: different form, different endpoint,
-  // different persisted pos_system value.
-  const effectivePosSystem = posSystem === 'iiko' && isIikoCloudUrl(field1)
-    ? 'iiko_cloud'
+  // Detected-but-not-yet-chosen: show the picker inline in the config step.
+  const iikoweb_like = posSystem === 'iiko' && isIikoCloudUrl(field1)
+  const needsIikoPathChoice = iikoweb_like && iikoCloudOrWebChoice === null
+
+  // Resolved POS: the value actually persisted + used for endpoint routing.
+  // Before the user makes a choice we still report 'iiko' so the form doesn't
+  // render password fields prematurely — the choice picker takes over the UI.
+  const effectivePosSystem = iikoweb_like && iikoCloudOrWebChoice !== null
+    ? iikoCloudOrWebChoice
     : posSystem
 
   // Each POS defines which fields are required for validation
-  const configValid = effectivePosSystem === 'iiko'
-    ? field1.length > 10 && field2.trim().length > 0 && field3.length > 0
-    : effectivePosSystem === 'iiko_cloud'
-      ? field1.length > 10 && field2.trim().length > 10
-      : effectivePosSystem === 'numier'
-        ? field1.trim().length > 10
-        : false
+  const configValid = needsIikoPathChoice
+    ? false
+    : effectivePosSystem === 'iiko'
+      ? field1.length > 10 && field2.trim().length > 0 && field3.length > 0
+      : effectivePosSystem === 'iiko_cloud'
+        ? field1.length > 10 && field2.trim().length > 10
+        : effectivePosSystem === 'iikoweb'
+          ? field1.length > 10 && field2.trim().length > 0 && field3.length > 0
+          : effectivePosSystem === 'numier'
+            ? field1.trim().length > 10
+            : false
 
   // Create location
   const createMutation = useMutation({
@@ -78,6 +91,13 @@ export function AddLocationPage() {
       if (effectivePosSystem === 'iiko_cloud') {
         return api.put('/locations/iiko-cloud-config', {
           iiko_cloud_api_login: field2.trim(),
+        })
+      }
+      if (effectivePosSystem === 'iikoweb') {
+        return api.put('/locations/iikoweb-config', {
+          iikoweb_url: field1.trim(),
+          iikoweb_login: field2.trim(),
+          iikoweb_password: field3,
         })
       }
       return api.put('/locations/iiko-config', {
@@ -275,10 +295,19 @@ export function AddLocationPage() {
               field1={field1} setField1={setField1}
               field2={field2} setField2={setField2}
               field3={field3} setField3={setField3}
+              hideInputsForChoice={needsIikoPathChoice}
             />
-            {effectivePosSystem === 'iiko_cloud' && (
+            {needsIikoPathChoice && (
+              <IikoPathChoice onPick={setIikoCloudOrWebChoice} t={t} />
+            )}
+            {!needsIikoPathChoice && effectivePosSystem === 'iiko_cloud' && (
               <p className="text-xs text-primary bg-primary-lighter rounded-[10px] px-3 py-2">
                 {t('locations.iikoCloudDetected')}
+              </p>
+            )}
+            {!needsIikoPathChoice && effectivePosSystem === 'iikoweb' && (
+              <p className="text-xs text-primary bg-primary-lighter rounded-[10px] px-3 py-2">
+                {t('locations.iikoWebDetected')}
               </p>
             )}
 
@@ -377,21 +406,24 @@ export function AddLocationPage() {
   )
 }
 
-/** Renders credential fields for any POS — same visual style, different inputs. */
+/** Renders credential fields for any POS — same visual style, different inputs.
+ *  hideInputsForChoice: when an iikoweb URL is detected but the user hasn't yet
+ *  chosen between Cloud (apiLogin) and iikoWeb (login+password), we hide the
+ *  post-URL inputs so the choice picker below can take over.
+ */
 function PosConfigFields({
-  posSystem, field1, setField1, field2, setField2, field3, setField3,
+  posSystem, field1, setField1, field2, setField2, field3, setField3, hideInputsForChoice,
 }: {
   posSystem: string
   field1: string; setField1: (v: string) => void
   field2: string; setField2: (v: string) => void
   field3: string; setField3: (v: string) => void
+  hideInputsForChoice?: boolean
 }) {
   if (posSystem === 'numier') {
     return <FilledInput placeholder="API Key" value={field1} onChange={setField1} />
   }
   if (posSystem === 'iiko_cloud') {
-    // Cloud-hosted iiko (iikoweb.ru). Credentials differ from Server API:
-    // no login/password, only an apiLogin UUID issued in the iikoweb admin.
     return (
       <>
         <FilledInput placeholder="https://your-restaurant.iikoweb.ru" value={field1} onChange={setField1} />
@@ -402,13 +434,60 @@ function PosConfigFields({
       </>
     )
   }
-  // iiko Server (default)
+  if (posSystem === 'iikoweb') {
+    // Direct iikoWeb REST via /api/auth/login — login+password session auth.
+    return (
+      <>
+        <FilledInput placeholder="https://your-restaurant.iikoweb.ru" value={field1} onChange={setField1} />
+        <FilledInput placeholder="Login" value={field2} onChange={setField2} />
+        <FilledInput placeholder="Password" value={field3} onChange={setField3} type="password" />
+      </>
+    )
+  }
+  // iiko Server (default). When hideInputsForChoice is true we only render the URL
+  // input so the Cloud-vs-iikoWeb choice below can take over without the user
+  // also facing stale login/password fields.
   return (
     <>
       <FilledInput placeholder="Server URL (https://...)" value={field1} onChange={setField1} />
-      <FilledInput placeholder="Login" value={field2} onChange={setField2} />
-      <FilledInput placeholder="Password" value={field3} onChange={setField3} type="password" />
+      {!hideInputsForChoice && (
+        <>
+          <FilledInput placeholder="Login" value={field2} onChange={setField2} />
+          <FilledInput placeholder="Password" value={field3} onChange={setField3} type="password" />
+        </>
+      )}
     </>
+  )
+}
+
+/** Shown when an iikoweb.ru URL is detected but the user hasn't chosen between
+ *  Cloud (apiLogin UUID) and iikoWeb (login+password). Two tappable tiles. */
+function IikoPathChoice({ onPick, t }: {
+  onPick: (p: 'iiko_cloud' | 'iikoweb') => void
+  t: (key: string, params?: Record<string, any>) => string
+}) {
+  return (
+    <div className="flex flex-col gap-2 pt-1">
+      <p className="text-xs font-semibold text-gray uppercase tracking-wide">
+        {t('locations.iikoPathChoiceTitle')}
+      </p>
+      <button
+        type="button"
+        onClick={() => onPick('iiko_cloud')}
+        className="w-full text-left bg-bg rounded-[14px] px-4 py-3 active:opacity-80"
+      >
+        <p className="text-sm font-semibold text-dark">{t('locations.iikoCloudOptionTitle')}</p>
+        <p className="text-xs text-gray mt-0.5">{t('locations.iikoCloudOptionDesc')}</p>
+      </button>
+      <button
+        type="button"
+        onClick={() => onPick('iikoweb')}
+        className="w-full text-left bg-bg rounded-[14px] px-4 py-3 active:opacity-80"
+      >
+        <p className="text-sm font-semibold text-dark">{t('locations.iikoWebOptionTitle')}</p>
+        <p className="text-xs text-gray mt-0.5">{t('locations.iikoWebOptionDesc')}</p>
+      </button>
+    </div>
   )
 }
 
